@@ -33,7 +33,7 @@
 
             <n-divider />
 
-            <n-grid x-gap="12" :cols="2">
+            <n-grid :x-gap="12" :cols="isMobile ? 1 : 2">
               <n-grid-item>
                 <n-card title="顶背离" size="small">
                   <n-scrollbar style="max-height: 600px">
@@ -80,7 +80,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useMessage } from 'naive-ui'
 import { MultiSymbolService } from '../services/multiSymbolService'
 
@@ -176,11 +176,16 @@ onMounted(() => {
   selectedDate.value = today.getTime()
   onDateChange()
 })
+
+// 添加移动端检测
+const isMobile = computed(() => window.innerWidth <= 768)
 </script>
 
 <style scoped>
 .divergence-stats {
   padding: 20px;
+  height: 100%;
+  overflow: auto;
 }
 
 :deep(.n-card-header) {
@@ -193,5 +198,27 @@ onMounted(() => {
 
 :deep(.n-card) {
   margin-bottom: 0;
+}
+
+@media (max-width: 768px) {
+  .divergence-stats {
+    padding: 8px;
+  }
+
+  :deep(.n-card-header) {
+    padding: 8px 12px;
+  }
+
+  :deep(.n-card__content) {
+    padding: 12px;
+  }
+
+  :deep(.n-list-item) {
+    padding: 6px 8px;
+  }
+
+  :deep(.n-scrollbar) {
+    max-height: 400px !important;
+  }
 }
 </style>

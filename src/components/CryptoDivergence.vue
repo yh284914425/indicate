@@ -314,7 +314,13 @@ onMounted(async () => {
 
 @media (max-width: 768px) {
   .crypto-divergence {
-    padding: 12px;
+    padding: 8px;
+    height: calc(100vh - 140px);
+    overflow: auto;
+  }
+
+  .settings-card {
+    margin-bottom: 12px;
   }
 
   .select-width {
@@ -326,8 +332,20 @@ onMounted(async () => {
     gap: 12px;
   }
 
-  .fetch-button {
-    width: 100%;
+  .signals-card {
+    height: calc(100% - 180px);
+  }
+
+  :deep(.n-data-table-wrapper) {
+    overflow: auto;
+  }
+
+  :deep(.n-card-header) {
+    padding: 12px 16px;
+  }
+
+  :deep(.n-card__content) {
+    padding: 12px;
   }
 }
 </style>

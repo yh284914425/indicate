@@ -51,7 +51,7 @@
 
         <n-divider />
 
-        <n-card title="监控状���" size="small">
+        <n-card title="监控状态" size="small">
           <n-space vertical>
             <n-text>
               状态: <n-tag :type="isMonitoring ? 'success' : 'default'">
@@ -72,10 +72,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted } from 'vue'
+import { ref, onUnmounted, onMounted, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import { MonitorService } from '../services/monitorService'
 import { MultiSymbolService } from '../services/multiSymbolService'
+import axios from 'axios'
 
 const message = useMessage()
 const monitorService = new MonitorService()
@@ -122,31 +123,66 @@ const initSymbols = async () => {
 
 const toggleMonitoring = async () => {
   if (isMonitoring.value) {
-    monitorService.stopMonitoring()
-    isMonitoring.value = false
-    message.success('已停止监控')
+    try {
+      const response = await axios.post('/api/monitor/stop', {
+        chatId: formModel.value.chatId
+      });
+      
+      if (response.data.success) {
+        isMonitoring.value = false;
+        message.success('已停止监控');
+      }
+    } catch (error) {
+      console.error('停止监控失败:', error);
+      message.error('停止监控失败');
+    }
   } else {
     try {
-      loading.value = true
-      const monitor = new MonitorService(formModel.value.chatId)
-      await monitor.startMonitoring(formModel.value.symbols)
-      isMonitoring.value = true
-      message.success('监控已启动')
+      loading.value = true;
+      const response = await axios.post('/api/monitor/start', {
+        symbols: formModel.value.symbols,
+        chatId: formModel.value.chatId
+      });
+      
+      if (response.data.success) {
+        isMonitoring.value = true;
+        message.success('监控已启动');
+      }
     } catch (error) {
-      console.error('启动监控失败:', error)
-      message.error('启动监控失败')
+      console.error('启动监控失败:', error);
+      message.error('启动监控失败');
     } finally {
-      loading.value = false
+      loading.value = false;
     }
   }
-}
+};
 
-onUnmounted(() => {
-  monitorService.stopMonitoring()
-})
+// 页面加载时检查监控状态
+onMounted(async () => {
+  await initSymbols();
+  
+  // 如果有保存的chatId，检查监控状态
+  const savedChatId = localStorage.getItem('monitorChatId');
+  if (savedChatId) {
+    formModel.value.chatId = savedChatId;
+    try {
+      const response = await axios.get(`/api/monitor/status/${savedChatId}`);
+      if (response.data.success && response.data.isMonitoring) {
+        isMonitoring.value = true;
+        formModel.value.symbols = response.data.symbols;
+      }
+    } catch (error) {
+      console.error('获取监控状态失败:', error);
+    }
+  }
+});
 
-// 初始化
-initSymbols()
+// 保存chatId
+watch(() => formModel.value.chatId, (newValue) => {
+  if (newValue) {
+    localStorage.setItem('monitorChatId', newValue);
+  }
+});
 </script>
 
 <style scoped>

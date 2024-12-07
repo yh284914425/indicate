@@ -3,7 +3,7 @@
     <n-card title="当日市场概览">
       <n-spin :show="loading">
         <n-space vertical>
-          <n-grid :cols="4" :x-gap="12">
+          <n-grid :cols="isMobile ? 1 : 4" :x-gap="12">
             <n-grid-item v-for="period in periods" :key="period.interval">
               <n-card :title="period.label" size="small" class="period-card">
                 <n-space vertical>
@@ -70,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useMessage } from 'naive-ui'
 import { MultiSymbolService } from '../services/multiSymbolService'
 
@@ -117,6 +117,8 @@ async function fetchAllPeriods() {
 onMounted(() => {
   fetchAllPeriods()
 })
+
+const isMobile = computed(() => window.innerWidth <= 768)
 </script>
 
 <style scoped>
@@ -227,5 +229,35 @@ onMounted(() => {
 
 :deep(.n-card-header) {
   padding: 12px 18px;
+}
+
+@media (max-width: 768px) {
+  .daily-overview {
+    padding: 8px;
+  }
+
+  .period-card {
+    margin-bottom: 12px;
+  }
+
+  .divergence-count {
+    padding: 8px 0;
+  }
+
+  .count-item {
+    padding: 4px 8px;
+  }
+
+  .count-value {
+    font-size: 20px;
+  }
+
+  :deep(.n-card-header) {
+    padding: 8px 12px;
+  }
+
+  :deep(.n-card__content) {
+    padding: 12px;
+  }
 }
 </style> 

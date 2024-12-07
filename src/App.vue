@@ -116,4 +116,30 @@ body {
 .n-layout-scroll-container {
   overflow: hidden !important;
 }
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .header-content h1 {
+    font-size: 1.2rem;
+  }
+
+  .content {
+    padding: 8px;
+  }
+
+  .custom-tabs {
+    padding: 8px;
+    min-height: calc(100vh - 90px);
+  }
+
+  .n-tab-pane {
+    min-height: calc(100vh - 140px);
+    overflow: auto;
+  }
+
+  /* 确保内容可以滚动 */
+  .n-layout-scroll-container {
+    overflow: auto !important;
+  }
+}
 </style>
