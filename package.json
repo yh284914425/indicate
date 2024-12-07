@@ -11,7 +11,9 @@
     "test:unit": "vitest",
     "coverage": "vitest run --coverage",
     "build-only": "vite build",
-    "type-check": "vue-tsc --build"
+    "type-check": "vue-tsc --build",
+    "deploy": "vercel --prod"
+
   },
   "dependencies": {
     "@css-render/vue3-ssr": "^0.15.14",
