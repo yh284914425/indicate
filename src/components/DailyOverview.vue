@@ -74,8 +74,8 @@ import { ref, onMounted, computed } from 'vue'
 import { useMessage } from 'naive-ui'
 import { MultiSymbolService } from '../services/multiSymbolService'
 
-const message = useMessage()
 const multiSymbolService = new MultiSymbolService()
+const message = useMessage()
 const loading = ref(false)
 
 interface PeriodData {
@@ -86,6 +86,8 @@ interface PeriodData {
 }
 
 const periods = ref<PeriodData[]>([
+  { label: '15分钟', interval: '15m', topDivergences: [], bottomDivergences: [] },
+  { label: '30分钟', interval: '30m', topDivergences: [], bottomDivergences: [] },
   { label: '1小时', interval: '1h', topDivergences: [], bottomDivergences: [] },
   { label: '2小时', interval: '2h', topDivergences: [], bottomDivergences: [] },
   { label: '4小时', interval: '4h', topDivergences: [], bottomDivergences: [] },
