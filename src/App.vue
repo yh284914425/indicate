@@ -3,7 +3,6 @@ import { NConfigProvider, NMessageProvider, NLayout, NLayoutHeader, NLayoutConte
 import CryptoDivergence from './components/CryptoDivergence.vue'
 import DivergenceStats from './components/DivergenceStats.vue'
 import DailyOverview from './components/DailyOverview.vue'
-import DivergenceMonitor from './components/DivergenceMonitor.vue'
 </script>
 
 <template>
@@ -26,9 +25,7 @@ import DivergenceMonitor from './components/DivergenceMonitor.vue'
             <n-tab-pane name="daily" tab="当日概览">
               <DailyOverview />
             </n-tab-pane>
-            <n-tab-pane name="monitor" tab="背离监控">
-              <DivergenceMonitor />
-            </n-tab-pane>
+
           </n-tabs>
         </n-layout-content>
       </n-layout>
