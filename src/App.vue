@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { NConfigProvider, NMessageProvider, NLayout, NLayoutHeader, NLayoutContent, NTabs, NTabPane } from 'naive-ui'
 import CryptoDivergence from './components/CryptoDivergence.vue'
+import MultiPeriodAnalysis from './components/MultiPeriodAnalysis.vue'
 import DivergenceStats from './components/DivergenceStats.vue'
 import DailyOverview from './components/DailyOverview.vue'
 </script>
@@ -15,9 +16,17 @@ import DailyOverview from './components/DailyOverview.vue'
           </div>
         </n-layout-header>
         <n-layout-content class="content">
-          <n-tabs type="line" animated class="custom-tabs">
+          <n-tabs 
+            type="line" 
+            animated 
+            class="custom-tabs"
+            default-value="multi-period"
+          >
             <n-tab-pane name="single" tab="单币种分析">
               <CryptoDivergence />
+            </n-tab-pane>
+            <n-tab-pane name="multi-period" tab="多周期分析">
+              <MultiPeriodAnalysis />
             </n-tab-pane>
             <n-tab-pane name="stats" tab="多币种统计">
               <DivergenceStats />
@@ -25,7 +34,6 @@ import DailyOverview from './components/DailyOverview.vue'
             <n-tab-pane name="daily" tab="当日概览">
               <DailyOverview />
             </n-tab-pane>
-
           </n-tabs>
         </n-layout-content>
       </n-layout>

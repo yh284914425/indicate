@@ -215,4 +215,16 @@ export class CryptoService {
     
     return { j, j1, topDivergence, bottomDivergence };
   }
+
+  async getSymbols(): Promise<string[]> {
+    try {
+      const response = await axios.get('https://api.binance.com/api/v3/exchangeInfo')
+      return response.data.symbols
+        .filter((symbol: any) => symbol.status === 'TRADING' && symbol.quoteAsset === 'USDT')
+        .map((symbol: any) => symbol.symbol)
+    } catch (error) {
+      console.error('获取交易对列表失败:', error)
+      throw error
+    }
+  }
 }
