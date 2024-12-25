@@ -25,7 +25,7 @@
           <n-input-number
             v-model:value="days"
             :min="1"
-            :max="30"
+            :max="60"
             class="days-input"
             @update:value="fetchData"
           >

@@ -50,7 +50,36 @@ export class MultiPeriodService {
     // 并行处理所有周期
     const periodPromises = this.periods.map(async (period) => {
       try {
-        const klines = await this.cryptoService.getKlines(symbol, period)
+        // 根据周期和天数计算需要的K线数量
+        let limit = 1000
+        switch (period) {
+          case '15m':
+            limit = Math.min(1000, days * 24 * 4 + 100) // 每天96根K线
+            break
+          case '30m':
+            limit = Math.min(1000, days * 24 * 2 + 100) // 每天48根K线
+            break
+          case '1h':
+            limit = Math.min(1000, days * 24 + 100) // 每天24根K线
+            break
+          case '2h':
+            limit = Math.min(1000, days * 12 + 100) // 每天12根K线
+            break
+          case '4h':
+            limit = Math.min(1000, days * 6 + 100) // 每天6根K线
+            break
+          case '6h':
+            limit = Math.min(1000, days * 4 + 100) // 每天4根K线
+            break
+          case '12h':
+            limit = Math.min(1000, days * 2 + 100) // 每天2根K线
+            break
+          case '1d':
+            limit = Math.min(1000, days + 100) // 每天1根K线
+            break
+        }
+
+        const klines = await this.cryptoService.getKlines(symbol, period, limit)
         const { topDivergence, bottomDivergence } = this.cryptoService.calculateIndicators(klines)
         
         // 检查指定天数内的背离
