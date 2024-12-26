@@ -20,14 +20,14 @@
             :loading="loadingSymbols"
             filterable
             clearable
-            @update:value="fetchData"
+            @update:value="handleSymbolChange"
           />
           <n-input-number
             v-model:value="days"
             :min="1"
             :max="60"
             class="days-input"
-            @update:value="fetchData"
+            @update:value="fetchAllData"
           >
             <template #prefix>
               分析天数
@@ -40,18 +40,95 @@
       </div>
     </n-card>
 
-    <n-card class="signals-card">
-      <div class="table-container">
-        <n-data-table
-          :columns="columns"
-          :data="tableData"
-          :loading="loading"
-          :scroll-x="1200"
-          :max-height="500"
-          virtual-scroll
-        />
-      </div>
-    </n-card>
+    <!-- 修改分析结果的展示部分 -->
+    <div class="analysis-grid">
+      <!-- BTC和ETH的分析结果 -->
+      <n-card 
+        v-for="symbol in mainSymbols" 
+        :key="symbol" 
+        class="analysis-card" 
+        :title="symbol"
+      >
+        <div class="table-container">
+          <!-- PC端表格 -->
+          <n-data-table
+            v-if="!isMobile"
+            :columns="columns"
+            :data="getSymbolData(symbol)"
+            :loading="loadingMap[symbol]"
+            :scroll-x="800"
+            :max-height="500"
+            virtual-scroll
+          />
+          <!-- 移动端列表 -->
+          <div v-else class="mobile-list">
+            <n-spin :show="loadingMap[symbol]">
+              <n-list>
+                <n-list-item v-for="item in getSymbolData(symbol)" :key="`${item.period}-${item.time}`">
+                  <n-space vertical>
+                    <n-space justify="space-between" align="center">
+                      <n-tag size="small" :type="item.period.includes('d') ? 'success' : 'warning'">
+                        {{ item.period }}
+                      </n-tag>
+                      <n-text :style="{ color: item.type === 'top' ? '#d03050' : '#18a058' }">
+                        {{ item.type === 'top' ? '顶背离' : '底背离' }}
+                      </n-text>
+                    </n-space>
+                    <n-space justify="space-between" align="center">
+                      <n-text depth="3">{{ item.time }}</n-text>
+                      <n-text>{{ parseFloat(item.price).toFixed(2) }}</n-text>
+                    </n-space>
+                  </n-space>
+                </n-list-item>
+              </n-list>
+            </n-spin>
+          </div>
+        </div>
+      </n-card>
+
+      <!-- PEPE的分析结果 -->
+      <n-card 
+        v-if="selectedSymbol && !mainSymbols.includes(selectedSymbol)" 
+        class="analysis-card"
+        :title="selectedSymbol"
+      >
+        <div class="table-container">
+          <!-- PC端表格 -->
+          <n-data-table
+            v-if="!isMobile"
+            :columns="columns"
+            :data="getSymbolData(selectedSymbol)"
+            :loading="loadingMap[selectedSymbol]"
+            :scroll-x="800"
+            :max-height="500"
+            virtual-scroll
+          />
+          <!-- 移动端列表 -->
+          <div v-else class="mobile-list">
+            <n-spin :show="loadingMap[selectedSymbol]">
+              <n-list>
+                <n-list-item v-for="item in getSymbolData(selectedSymbol)" :key="`${item.period}-${item.time}`">
+                  <n-space vertical>
+                    <n-space justify="space-between" align="center">
+                      <n-tag size="small" :type="item.period.includes('d') ? 'success' : 'warning'">
+                        {{ item.period }}
+                      </n-tag>
+                      <n-text :style="{ color: item.type === 'top' ? '#d03050' : '#18a058' }">
+                        {{ item.type === 'top' ? '顶背离' : '底背离' }}
+                      </n-text>
+                    </n-space>
+                    <n-space justify="space-between" align="center">
+                      <n-text depth="3">{{ item.time }}</n-text>
+                      <n-text>{{ parseFloat(item.price).toFixed(2) }}</n-text>
+                    </n-space>
+                  </n-space>
+                </n-list-item>
+              </n-list>
+            </n-spin>
+          </div>
+        </div>
+      </n-card>
+    </div>
   </div>
 </template>
 
@@ -64,8 +141,69 @@ import { MultiPeriodService } from '../services/multiPeriodService'
 const message = useMessage()
 const multiPeriodService = new MultiPeriodService()
 
+// 主要币种列表
+const mainSymbols = ['BTCUSDT', 'ETHUSDT']
+const selectedSymbol = ref('PEPEUSDT')
+const days = ref(7)  // 添加天数状态
+const loadingMap = ref<Record<string, boolean>>({})
+const resultsMap = ref<Record<string, any[]>>({})
+
+// 获取指定币种的数据
+const getSymbolData = (symbol: string) => {
+  return resultsMap.value[symbol] || []
+}
+
+// 计算总信号数
+const signalCount = computed(() => {
+  return Object.values(resultsMap.value).reduce((total, results) => total + results.length, 0)
+})
+
+// 处理币种选择变化
+const handleSymbolChange = async (value: string) => {
+  if (value && !mainSymbols.includes(value)) {
+    await fetchData(value)
+  }
+}
+
+// 获取单个币种的分析数据
+const fetchData = async (symbol: string) => {
+  if (!symbol) return
+
+  try {
+    loadingMap.value[symbol] = true
+    const results = await multiPeriodService.analyze(symbol, days.value)
+    resultsMap.value[symbol] = results
+  } catch (error) {
+    message.error(`分析${symbol}失败`)
+    console.error(error)
+  } finally {
+    loadingMap.value[symbol] = false
+  }
+}
+
+// 获取所有需要分析的币种的数据
+const fetchAllData = async () => {
+  // 分析主要币种
+  await Promise.all(mainSymbols.map(symbol => fetchData(symbol)))
+  
+  // 如果选择了其他币种，也进行分析
+  if (selectedSymbol.value && !mainSymbols.includes(selectedSymbol.value)) {
+    await fetchData(selectedSymbol.value)
+  }
+}
+
+// 初始化
+onMounted(async () => {
+  await initSymbols()
+  // 先分析主要币种
+  await Promise.all(mainSymbols.map(symbol => fetchData(symbol)))
+  // 然后分析 PEPE
+  if (selectedSymbol.value) {
+    await fetchData(selectedSymbol.value)
+  }
+})
+
 // 状态
-const selectedSymbol = ref('BTCUSDT')
 const loading = ref(false)
 const loadingSymbols = ref(false)
 const symbolOptions = ref<Array<{
@@ -73,16 +211,6 @@ const symbolOptions = ref<Array<{
   value: string
   volume?: string  // 可选的交易量信息
 }>>([])
-const analysisResults = ref<Array<{
-  period: string
-  type: 'top' | 'bottom'
-  time: string
-  price: string
-}>>([])
-const days = ref(7)
-
-// 计算属性
-const signalCount = computed(() => analysisResults.value.length)
 
 // 表格列定义
 const columns: DataTableColumns = [
@@ -124,19 +252,6 @@ const columns: DataTableColumns = [
   }
 ]
 
-const tableData = computed(() => {
-  return analysisResults.value.map(result => ({
-    ...result,
-    time: new Date(result.time).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }))
-})
-
 // 初始化交易对列表
 const initSymbols = async () => {
   try {
@@ -165,25 +280,15 @@ const initSymbols = async () => {
   }
 }
 
-// 获取分析数据
-const fetchData = async () => {
-  if (!selectedSymbol.value) return
+// 添加移动端检测
+const isMobile = computed(() => {
+  return window.innerWidth <= 768
+})
 
-  try {
-    loading.value = true
-    const results = await multiPeriodService.analyze(selectedSymbol.value, days.value)
-    analysisResults.value = results
-  } catch (error) {
-    message.error('分析失败')
-    console.error(error)
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(async () => {
-  await initSymbols()
-  await fetchData()
+// 监听窗口大小变化
+window.addEventListener('resize', () => {
+  // 触发响应式更新
+  isMobile.value = window.innerWidth <= 768
 })
 </script>
 
@@ -280,5 +385,133 @@ onMounted(async () => {
 
 .days-input {
   width: 160px;
+}
+
+/* 移动端样式 */
+.mobile-list {
+  height: 100%;
+  overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  .multi-period-analysis {
+    padding: 8px;
+  }
+
+  .settings-card {
+    margin-bottom: 8px;
+  }
+
+  .select-group {
+    gap: 8px;
+  }
+
+  .select-width {
+    width: 100%;
+  }
+
+  .days-input {
+    width: 100%;
+  }
+
+  .signals-card {
+    height: calc(100% - 180px);
+  }
+
+  .table-container {
+    padding: 0;
+  }
+
+  :deep(.n-list-item) {
+    padding: 8px !important;
+  }
+
+  :deep(.n-space) {
+    width: 100%;
+  }
+}
+
+/* 确保移动端的滚动条正常工作 */
+:deep(.n-list) {
+  max-height: calc(100vh - 300px);
+  overflow-y: auto;
+}
+
+/* 优化移动端的间距 */
+:deep(.n-card-header) {
+  padding: 12px !important;
+}
+
+:deep(.n-card__content) {
+  padding: 8px !important;
+}
+
+/* 调整卡片间距 */
+.signals-card + .signals-card {
+  margin-top: 16px;
+}
+
+@media (max-width: 768px) {
+  .signals-card + .signals-card {
+    margin-top: 8px;
+  }
+}
+
+/* 添加网格布局样式 */
+.analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+  height: calc(100% - 140px);
+}
+
+.analysis-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.table-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .analysis-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .analysis-card {
+    height: 400px; /* 在移动端给定固定高度 */
+  }
+}
+
+/* 调整表格样式 */
+:deep(.n-data-table) {
+  height: 100%;
+}
+
+:deep(.n-scrollbar-container) {
+  height: 100%;
+}
+
+/* 确保内容可以滚动 */
+:deep(.n-card-content) {
+  height: calc(100% - 44px); /* 44px 是卡片标题的高度 */
+  overflow: hidden;
+}
+
+/* 调整列宽度以适应三列布局 */
+:deep(.n-data-table-td) {
+  padding: 8px !important;
+}
+
+/* 优化表格在小屏幕上的显示 */
+:deep(.n-data-table-th) {
+  padding: 8px !important;
+  white-space: nowrap;
 }
 </style> 
