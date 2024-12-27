@@ -9,7 +9,7 @@ export class TelegramService {
     this.chatId = chatId;
   }
 
-  async sendMessage(message: string) {
+  async sendMessage(message: string): Promise<boolean> {
     try {
       const url = `https://api.telegram.org/bot${this.botToken}/sendMessage`;
       await axios.post(url, {
@@ -17,10 +17,22 @@ export class TelegramService {
         text: message,
         parse_mode: 'HTML'
       });
-      console.log('Telegram消息发送成功');
+      return true;
     } catch (error) {
-      console.error('Telegram消息发送失败:', error);
-      throw error;
+      console.error('发送Telegram消息失败:', error);
+      return false;
     }
+  }
+
+  formatDivergenceMessage(symbol: string, period: string, type: 'top' | 'bottom', price: string, time: string): string {
+    const divergenceType = type === 'top' ? '顶背离' : '底背离';
+    return `
+🔔 <b>新${divergenceType}信号</b>
+
+📊 交易对: ${symbol}
+⏱ 周期: ${period}
+💰 价格: ${price}
+🕒 时间: ${time}
+`;
   }
 } 

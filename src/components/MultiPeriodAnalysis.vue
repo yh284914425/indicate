@@ -4,9 +4,18 @@
       <template #header>
         <div class="card-header">
           <h3>多周期分析</h3>
-          <n-tag v-if="signalCount > 0" class="signal-count">
-            发现 {{ signalCount }} 个信号
-          </n-tag>
+          <div class="header-controls">
+            <n-button size="small" @click="showTelegramConfig = true">
+              Telegram设置
+            </n-button>
+            <n-switch v-model:value="wsEnabled" size="small">
+              <template #checked>实时更新已开启</template>
+              <template #unchecked>实时更新已关闭</template>
+            </n-switch>
+            <n-tag v-if="signalCount > 0" class="signal-count">
+              发现 {{ signalCount }} 个信号
+            </n-tag>
+          </div>
         </div>
       </template>
 
@@ -39,6 +48,24 @@
         </div>
       </div>
     </n-card>
+
+    <!-- Telegram配置对话框 -->
+    <n-modal v-model:show="showTelegramConfig" preset="card" title="Telegram通知设置">
+      <n-form>
+        <n-form-item label="Bot Token">
+          <n-input v-model:value="telegramConfig.botToken" type="password" placeholder="输入Bot Token" />
+        </n-form-item>
+        <n-form-item label="Chat ID">
+          <n-input v-model:value="telegramConfig.chatId" placeholder="输入Chat ID" />
+        </n-form-item>
+        <n-form-item>
+          <n-space>
+            <n-button type="primary" @click="saveTelegramConfig">保存</n-button>
+            <n-button @click="showTelegramConfig = false">取消</n-button>
+          </n-space>
+        </n-form-item>
+      </n-form>
+    </n-modal>
 
     <!-- 分析结果网格 -->
     <div class="content-scroll">
@@ -193,10 +220,12 @@ import {
 } from 'echarts/components'
 import { use } from 'echarts/core'
 import VChart from 'vue-echarts'
-import { ref, computed, onMounted, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h, watch } from 'vue'
 import { useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import { MultiPeriodService } from '../services/multiPeriodService'
+import { TelegramService } from '../services/telegramService'
+import { WebSocketService } from '../services/websocketService'
 
 const message = useMessage()
 const multiPeriodService = new MultiPeriodService()
@@ -225,13 +254,23 @@ const handleSymbolChange = async (value: string) => {
   }
 }
 
-// 获取单个币种的分析数据
-const fetchData = async (symbol: string) => {
+// 添加一个Set来记录已经发送过通知的信号
+const sentSignals = new Set<string>();
+
+// 修改获取单个币种的分析数据的方法
+const fetchData = async (symbol: string, isInitialLoad = true) => {
   if (!symbol) return
 
   try {
     loadingMap.value[symbol] = true
     const results = await multiPeriodService.analyze(symbol, days.value)
+    
+    // 只在非初始化加载时检查新信号
+    if (!isInitialLoad) {
+      checkNewSignalsAndNotify(symbol, results)
+    }
+    
+    // 更新结果
     resultsMap.value[symbol] = results
   } catch (error) {
     message.error(`分析${symbol}失败`)
@@ -241,27 +280,16 @@ const fetchData = async (symbol: string) => {
   }
 }
 
-// 获取所有需要分析的币种的数据
+// 修改获取所有数据的方法
 const fetchAllData = async () => {
   // 分析主要币种
-  await Promise.all(mainSymbols.map(symbol => fetchData(symbol)))
+  await Promise.all(mainSymbols.map(symbol => fetchData(symbol, true)))
   
   // 如果选择了其他币种，也进行分析
   if (selectedSymbol.value && !mainSymbols.includes(selectedSymbol.value)) {
-    await fetchData(selectedSymbol.value)
+    await fetchData(selectedSymbol.value, true)
   }
 }
-
-// 初始化
-onMounted(async () => {
-  await initSymbols()
-  // 先分析主要币种
-  await Promise.all(mainSymbols.map(symbol => fetchData(symbol)))
-  // 然后分析 PEPE
-  if (selectedSymbol.value) {
-    await fetchData(selectedSymbol.value)
-  }
-})
 
 // 状态
 const loading = ref(false)
@@ -509,6 +537,205 @@ const getGroupedSignals = (day: Date, hour: number) => {
   
   return grouped
 }
+
+// WebSocket控制
+const wsEnabled = ref(true)  // 默认开启
+let wsService: WebSocketService | null = null
+
+// 修改WebSocket消息处理
+const handleWsMessage = async (data: any) => {
+  const { symbol, period, kline } = data;
+  
+  // 只在K线收盘时进行分析
+  if (kline.x) { // x表示这根K线是否完结
+    console.log(`收到${symbol} ${period}周期的新K线数据`);
+    
+    try {
+      // WebSocket推送的数据不是初始化加载
+      await fetchData(symbol, false);
+    } catch (error) {
+      console.error(`分析${symbol}失败:`, error);
+    }
+  }
+}
+
+// 处理WebSocket开关变化
+const handleWsToggle = (enabled: boolean) => {
+  if (enabled) {
+    initWebSocket()
+    message.success('已开启实时更新')
+  } else {
+    if (wsService) {
+      wsService.disconnect()
+      wsService = null
+    }
+    message.success('已关闭实时更新')
+  }
+}
+
+// 修改initWebSocket函数
+const initWebSocket = () => {
+  if (!wsEnabled.value) return
+  
+  if (wsService) {
+    wsService.disconnect()
+  }
+
+  // 获取需要监听的所有交易对
+  const allSymbols = [...mainSymbols]
+  if (selectedSymbol.value && !mainSymbols.includes(selectedSymbol.value)) {
+    allSymbols.push(selectedSymbol.value)
+  }
+
+  wsService = new WebSocketService(handleWsMessage)
+  wsService.connect(allSymbols)
+}
+
+// 修改监听选中的交易对变化
+watch(selectedSymbol, () => {
+  if (wsEnabled.value) {
+    initWebSocket()
+  }
+})
+
+// 监听WebSocket开关
+watch(wsEnabled, (newValue) => {
+  handleWsToggle(newValue)
+})
+
+// 添加页面可见性监听
+const handleVisibilityChange = () => {
+  if (document.hidden) {
+    console.log('页面不可见，保持WebSocket连接...');
+    // 可以考虑降低刷新频率或其他优化
+  } else {
+    console.log('页面可见，重新连接WebSocket...');
+    if (wsEnabled.value) {
+      // 重新连接以确保数据最新
+      initWebSocket();
+    }
+  }
+}
+
+// 修改组件初始化
+onMounted(async () => {
+  loadTelegramConfig()
+  await initSymbols()
+  await fetchAllData()
+  // 初始化完成后自动连接WebSocket
+  initWebSocket()
+  
+  // 添加页面可见性监听
+  document.addEventListener('visibilitychange', handleVisibilityChange)
+  
+  // 添加定时检查连接状态
+  const checkConnectionInterval = window.setInterval(() => {
+    if (wsService?.isConnected() === false && wsEnabled.value) {
+      console.log('检测到WebSocket断开，尝试重新连接...')
+      initWebSocket()
+    }
+  }, 60000) // 每分钟检查一次
+  
+  // 清理定时器
+  onUnmounted(() => {
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    clearInterval(checkConnectionInterval)
+    if (wsService) {
+      wsService.disconnect()
+    }
+    sentSignals.clear()
+  })
+})
+
+// Telegram配置
+const telegramConfig = ref({
+  enabled: true,  // 默认开启
+  botToken: '7945195631:AAFxMEQNMLSId-hPVseSKMwk2uL3vCqjMCw',
+  chatId: '1797193692'
+})
+
+// 添加Telegram配置表单
+const showTelegramConfig = ref(false)
+let telegramService: TelegramService | null = null
+
+// 保存Telegram配置
+const saveTelegramConfig = () => {
+  if (telegramConfig.value.botToken && telegramConfig.value.chatId) {
+    telegramService = new TelegramService(
+      telegramConfig.value.botToken,
+      telegramConfig.value.chatId
+    )
+    telegramConfig.value.enabled = true
+    localStorage.setItem('telegramConfig', JSON.stringify(telegramConfig.value))
+    message.success('Telegram配置已保存')
+    showTelegramConfig.value = false
+  } else {
+    message.error('请填写完整的Telegram配置')
+  }
+}
+
+// 修改加载Telegram配置的方法
+const loadTelegramConfig = () => {
+  const savedConfig = localStorage.getItem('telegramConfig')
+  if (savedConfig) {
+    const config = JSON.parse(savedConfig)
+    telegramConfig.value = config
+  }
+  // 无论是否有保存的配置，都初始化TelegramService
+  if (telegramConfig.value.botToken && telegramConfig.value.chatId) {
+    telegramService = new TelegramService(
+      telegramConfig.value.botToken,
+      telegramConfig.value.chatId
+    )
+  }
+}
+
+// 修改检查新信号的方法
+const checkNewSignalsAndNotify = (symbol: string, newResults: any[]) => {
+  if (!telegramService || !telegramConfig.value.enabled) return
+
+  const oldResults = resultsMap.value[symbol] || []
+  const oldSignalTimes = new Set(oldResults.map(r => r.time))
+  
+  // 获取今天的开始时间
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  // 找出今天的新信号
+  const newSignals = newResults.filter(signal => {
+    const signalTime = new Date(signal.time)
+    // 创建唯一标识
+    const signalId = `${symbol}-${signal.period}-${signal.type}-${signal.time}-${signal.price}`
+    
+    // 检查是否是今天的新信号且未发送过通知
+    const isNewSignal = !oldSignalTimes.has(signal.time) && 
+                       signalTime >= today && 
+                       !sentSignals.has(signalId)
+    
+    // 如果是新信号，记录到已发送集合中
+    if (isNewSignal) {
+      sentSignals.add(signalId)
+    }
+    
+    return isNewSignal
+  })
+  
+  // 发送新信号通知
+  newSignals.forEach(async (signal) => {
+    const divergenceType = signal.type === 'top' ? '🔴顶背离' : '🟢底背离'
+    const message = `
+${divergenceType}信号提醒！
+
+📊 交易对: ${symbol}
+⏱ 周期: ${signal.period}
+💰 当前价格: ${signal.price}
+🕒 信号时间: ${signal.time}
+
+请注意风险，及时处理！
+`
+    await telegramService!.sendMessage(message)
+  })
+}
 </script>
 
 <style scoped>
@@ -709,5 +936,11 @@ const getGroupedSignals = (day: Date, hour: number) => {
     font-size: 9px;
     min-width: 20px;
   }
+}
+
+.header-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
 }
 </style> 
