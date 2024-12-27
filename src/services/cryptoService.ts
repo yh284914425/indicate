@@ -58,6 +58,47 @@ export class CryptoService {
     }
   }
 
+  // 获取更多K线数据
+  async getExtendedKlines(
+    symbol: string,
+    interval: string,
+    desiredLimit: number = 2000
+  ): Promise<KlineData[]> {
+    try {
+      const batchSize = 1000;
+      const batches = Math.ceil(desiredLimit / batchSize);
+      let allKlines: KlineData[] = [];
+      
+      for (let i = 0; i < batches; i++) {
+        let endTime: number | undefined;
+        if (allKlines.length > 0) {
+          endTime = allKlines[0].openTime - 1;
+        }
+        
+        const klines = await this.getKlines(
+          symbol,
+          interval,
+          Math.min(batchSize, desiredLimit - allKlines.length),
+          undefined,
+          endTime
+        );
+        
+        if (klines.length === 0) break;
+        allKlines = [...klines, ...allKlines];
+        
+        if (klines.length < batchSize) break;
+        
+        // 添加延迟以避免触发频率限制
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      return allKlines;
+    } catch (error) {
+      console.error(`获取扩展K线数据失败 ${symbol}:`, error);
+      throw error;
+    }
+  }
+
   // 技术指标计算函数
   private MA(data: number[], period: number): number[] {
     const result: number[] = [];

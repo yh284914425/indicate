@@ -25,6 +25,13 @@
             class="select-width"
             @update:value="fetchData"
           />
+          <n-select
+            v-model:value="selectedLimit"
+            :options="limitOptions"
+            placeholder="选择K线数量"
+            class="select-width"
+            @update:value="fetchData"
+          />
         </div>
       </div>
     </n-card>
@@ -109,6 +116,15 @@ const intervalOptions = [
   { label: '1月', value: '1M' }
 ]
 
+const selectedLimit = ref(1000)
+const limitOptions = [
+  { label: '1000根', value: 1000 },
+  { label: '2000根', value: 2000 },
+  { label: '3000根', value: 3000 },
+  { label: '4000根', value: 4000 },
+  { label: '5000根', value: 5000 }
+]
+
 const columns: DataTableColumns = [
   {
     title: '时间',
@@ -170,10 +186,10 @@ const fetchData = async () => {
   
   try {
     loading.value = true;
-    const klines = await cryptoService.getKlines(
+    const klines = await cryptoService.getExtendedKlines(
       selectedSymbol.value,
       selectedInterval.value,
-      1000
+      selectedLimit.value
     );
     
     const { topDivergence, bottomDivergence, j } = cryptoService.calculateIndicators(klines);
