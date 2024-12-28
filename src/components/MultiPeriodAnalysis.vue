@@ -603,20 +603,6 @@ watch(wsEnabled, (newValue) => {
   handleWsToggle(newValue)
 })
 
-// 添加页面可见性监听
-const handleVisibilityChange = () => {
-  if (document.hidden) {
-    console.log('页面不可见，保持WebSocket连接...');
-    // 可以考虑降低刷新频率或其他优化
-  } else {
-    console.log('页面可见，重新连接WebSocket...');
-    if (wsEnabled.value) {
-      // 重新连接以确保数据最新
-      initWebSocket();
-    }
-  }
-}
-
 // 修改组件初始化
 onMounted(async () => {
   loadTelegramConfig()
@@ -625,21 +611,16 @@ onMounted(async () => {
   // 初始化完成后自动连接WebSocket
   initWebSocket()
   
-  // 添加页面可见性监听
-  document.addEventListener('visibilitychange', handleVisibilityChange)
-  
-  // 添加定时检查连接状态
-  const checkConnectionInterval = window.setInterval(() => {
-    if (wsService?.isConnected() === false && wsEnabled.value) {
-      console.log('检测到WebSocket断开，尝试重新连接...')
+  // 添加定时重连
+  const reconnectInterval = window.setInterval(() => {
+    if (wsEnabled.value) {
       initWebSocket()
     }
-  }, 60000) // 每分钟检查一次
+  }, 60000) // 每分钟尝试重连
   
   // 清理定时器
   onUnmounted(() => {
-    document.removeEventListener('visibilitychange', handleVisibilityChange)
-    clearInterval(checkConnectionInterval)
+    clearInterval(reconnectInterval)
     if (wsService) {
       wsService.disconnect()
     }
@@ -724,7 +705,7 @@ const checkNewSignalsAndNotify = (symbol: string, newResults: any[]) => {
   newSignals.forEach(async (signal) => {
     const divergenceType = signal.type === 'top' ? '🔴顶背离' : '🟢底背离'
     const message = `
-${divergenceType}信号提醒！
+${divergenceType}信号提醒！我是浏览器端
 
 📊 交易对: ${symbol}
 ⏱ 周期: ${signal.period}

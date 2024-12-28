@@ -16,7 +16,7 @@ interface Signal {
 
 // 配置
 const config = {
-    symbols: ['BTCUSDT', 'ETHUSDT'], // 主要币种
+    symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'PEPEUSDT', 'ACTUSDT'], // 主要币种
     periods: ['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'], // 分析周期
     days: 166, // 分析天数
     telegram: {
@@ -77,7 +77,7 @@ async function checkNewSignalsAndNotify(signals: Signal[]) {
     const newSignals = signals.filter(signal => {
         const signalTime = new Date(signal.time)
         const signalId = `${signal.symbol}-${signal.period}-${signal.type}-${signal.time}-${signal.price}`
-        
+
         const isNewSignal = signalTime >= today && !sentSignals.has(signalId)
         if (isNewSignal) {
             sentSignals.add(signalId)
@@ -139,7 +139,7 @@ function initWebSocket(symbols: string[]) {
                         period,
                         config.days
                     )
-                    
+
                     if (signals.length > 0) {
                         console.log(`发现${signals.length}个新信号`)
                         await checkNewSignalsAndNotify(signals)
@@ -180,7 +180,7 @@ function initWebSocket(symbols: string[]) {
 // 主函数
 async function main() {
     console.log('开始初始化分析...')
-    
+
     // 初始分析所有周期
     for (const symbol of config.symbols) {
         for (const period of config.periods) {
@@ -189,7 +189,7 @@ async function main() {
                 period,
                 config.days
             )
-            
+
             if (signals.length > 0) {
                 // console.log(`${symbol} ${period}发现${signals.length}个信号`)
             }
