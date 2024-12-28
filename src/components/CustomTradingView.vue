@@ -54,6 +54,16 @@ import { WebSocketService } from '../services/websocketService'
 const message = useMessage()
 const cryptoService = new CryptoService()
 
+interface TimeRange {
+  from: number;
+  to: number;
+}
+
+interface VisibleTimeRange {
+  from: number | undefined;
+  to: number | undefined;
+}
+
 // 状态
 const chartContainer = ref<HTMLElement | null>(null)
 const chart = ref<any>(null)
@@ -109,6 +119,12 @@ const symbolOptions = ref<Array<{
 // WebSocket相关
 const wsService = ref<WebSocketService | null>(null)
 const wsEnabled = ref(true)
+
+// 添加数据范围追踪
+const currentDataRange = ref<TimeRange>({
+  from: 0,
+  to: 0
+})
 
 // 初始化WebSocket
 const initWebSocket = () => {
@@ -400,6 +416,10 @@ const initChart = () => {
     borderVisible: false,
     wickUpColor: '#26a69a',
     wickDownColor: '#ef5350',
+    scaleMargins: {
+      top: 0.1,
+      bottom: 0.2,
+    },
   })
 
   // 创建成交量图表
@@ -411,8 +431,8 @@ const initChart = () => {
       },
       priceScaleId: 'volume',
       scaleMargins: {
-        top: 0.8,
-        bottom: 0,
+        top: 0.85,
+        bottom: 0.05,
       },
     })
   }
@@ -474,6 +494,18 @@ const initChart = () => {
 
   window.addEventListener('resize', handleResize)
 
+  // 添加时间范围变化监听
+  chart.value.timeScale().subscribeVisibleTimeRangeChange(function(this: void) {
+    const visibleRange = chart.value.timeScale().getVisibleRange()
+    if (!visibleRange) return
+
+    // 如果可见范围的开始时间接近当前数据范围的开始时间，加载更多历史数据
+    if (visibleRange.from && currentDataRange.value.from > 0 && 
+        visibleRange.from - currentDataRange.value.from < 24 * 60 * 60) { // 当剩余1天的数据时加载更多
+      loadMoreHistoricalData()
+    }
+  })
+
   // 组件卸载时清理
   onUnmounted(() => {
     window.removeEventListener('resize', handleResize)
@@ -528,6 +560,14 @@ const fetchKlineData = async () => {
       close: parseFloat(item.close),
       volume: parseFloat(item.volume),
     }))
+
+    // 更新数据范围
+    if (formattedData.length > 0) {
+      currentDataRange.value = {
+        from: formattedData[0].time,
+        to: formattedData[formattedData.length - 1].time
+      }
+    }
 
     // 更新K线图数据
     if (candlestickSeries.value) {
@@ -803,6 +843,76 @@ const handleResize = () => {
     chart.value.applyOptions({
       width: chartContainer.value.clientWidth,
     })
+  }
+}
+
+// 添加加载更多历史数据的函数
+const loadMoreHistoricalData = async () => {
+  try {
+    // 使用当前数据范围的开始时间作为新数据的结束时间
+    const endTime = currentDataRange.value.from * 1000 // 转换为毫秒
+    const limit = 1000 // 每次加载1000条数据
+    
+    // 计算开始时间
+    let startTime = endTime
+    if (selectedInterval.value === '1d') {
+      startTime = endTime - (limit * 24 * 60 * 60 * 1000)
+    } else {
+      startTime = endTime - (limit * getIntervalMinutes(selectedInterval.value) * 60 * 1000)
+    }
+
+    // 获取历史数据
+    const historicalData = await cryptoService.getKlines(
+      selectedSymbol.value,
+      selectedInterval.value,
+      limit,
+      startTime,
+      endTime
+    )
+
+    if (historicalData.length === 0) return
+
+    // 格式化数据
+    const formattedData = historicalData.map((item) => ({
+      time: item.openTime / 1000,
+      open: parseFloat(item.open),
+      high: parseFloat(item.high),
+      low: parseFloat(item.low),
+      close: parseFloat(item.close),
+      volume: parseFloat(item.volume),
+    }))
+
+    // 更新数据范围
+    currentDataRange.value.from = formattedData[0].time
+
+    // 更新K线图数据
+    if (candlestickSeries.value) {
+      const currentData = candlestickSeries.value.data()
+      candlestickSeries.value.setData([...formattedData, ...currentData])
+    }
+
+    // 更新成交量数据
+    if (volumeSeries.value && showVolume.value) {
+      const volumeData = formattedData.map((item) => ({
+        time: item.time,
+        value: item.volume,
+        color: item.close >= item.open ? '#26a69a' : '#ef5350',
+      }))
+      const currentVolumeData = volumeSeries.value.data()
+      volumeSeries.value.setData([...volumeData, ...currentVolumeData])
+    }
+
+    // 更新指标数据
+    const allData = [...formattedData, ...candlestickSeries.value.data()]
+    if (showRSI.value) {
+      updateRSI(allData)
+    }
+    if (showMACD.value) {
+      updateMACD(allData)
+    }
+
+  } catch (error) {
+    console.error('加载历史数据失败:', error)
   }
 }
 
