@@ -1,150 +1,224 @@
-<script setup lang="ts">
-import { NConfigProvider, NMessageProvider, NLayout, NLayoutHeader, NLayoutContent, NTabs, NTabPane } from 'naive-ui'
-import CryptoDivergence from './components/CryptoDivergence.vue'
-import MultiPeriodAnalysis from './components/MultiPeriodAnalysis.vue'
-import DivergenceStats from './components/DivergenceStats.vue'
-import DailyOverview from './components/DailyOverview.vue'
-</script>
-
 <template>
-  <n-config-provider>
+  <n-config-provider :theme="theme">
     <n-message-provider>
       <n-layout class="layout">
         <n-layout-header class="header">
           <div class="header-content">
-            <h1>加密货币背离检测</h1>
+            <div class="logo">
+              <n-gradient-text :size="24" type="primary">
+                Crypto Analysis
+              </n-gradient-text>
+            </div>
+            <n-menu 
+              v-model:value="activeKey" 
+              mode="horizontal" 
+              :options="menuOptions"
+              class="main-menu"
+            />
           </div>
         </n-layout-header>
         <n-layout-content class="content">
-          <n-tabs 
-            type="line" 
-            animated 
-            class="custom-tabs"
-            default-value="multi-period"
-          >
-            <n-tab-pane name="single" tab="单币种分析">
-              <CryptoDivergence />
-            </n-tab-pane>
-            <n-tab-pane name="multi-period" tab="多周期分析">
-              <MultiPeriodAnalysis />
-            </n-tab-pane>
-            <n-tab-pane name="stats" tab="多币种统计">
-              <DivergenceStats />
-            </n-tab-pane>
-            <n-tab-pane name="daily" tab="当日概览">
-              <DailyOverview />
-            </n-tab-pane>
-          </n-tabs>
+          <router-view v-slot="{ Component }">
+            <transition name="fade" mode="out-in">
+              <component :is="Component" />
+            </transition>
+          </router-view>
         </n-layout-content>
       </n-layout>
     </n-message-provider>
   </n-config-provider>
 </template>
 
-<style>
+<script setup lang="ts">
+import { h, ref, computed } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
+import { darkTheme, lightTheme, NIcon, NMessageProvider, NGradientText } from 'naive-ui'
+import type { MenuOption } from 'naive-ui'
+import { BarChartOutline, StatsChartOutline, PieChartOutline, TrendingUpOutline, AnalyticsOutline } from '@vicons/ionicons5'
+
+// 根据系统主题自动切换
+const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+const theme = computed(() => prefersDark ? darkTheme : lightTheme)
+
+const route = useRoute()
+const activeKey = computed(() => route.path.slice(1) || 'home')
+
+function renderIcon(icon: any) {
+  return () => h(NIcon, null, { default: () => h(icon) })
+}
+
+const menuOptions: MenuOption[] = [
+  {
+    label: () =>
+      h(
+        RouterLink,
+        {
+          to: '/single'
+        },
+        { default: () => '单币种分析' }
+      ),
+    key: 'single',
+    icon: renderIcon(BarChartOutline)
+  },
+  {
+    label: () =>
+      h(
+        RouterLink,
+        {
+          to: '/multi-period'
+        },
+        { default: () => '多周期分析' }
+      ),
+    key: 'multi-period',
+    icon: renderIcon(StatsChartOutline)
+  },
+  {
+    label: () =>
+      h(
+        RouterLink,
+        {
+          to: '/multi-symbol'
+        },
+        { default: () => '多币种统计' }
+      ),
+    key: 'multi-symbol',
+    icon: renderIcon(PieChartOutline)
+  },
+  {
+    label: () =>
+      h(
+        RouterLink,
+        {
+          to: '/daily'
+        },
+        { default: () => '当日概览' }
+      ),
+    key: 'daily',
+    icon: renderIcon(TrendingUpOutline)
+  },
+  {
+    label: () =>
+      h(
+        RouterLink,
+        {
+          to: '/custom-chart'
+        },
+        { default: () => '自定义图表' }
+      ),
+    key: 'custom-chart',
+    icon: renderIcon(AnalyticsOutline)
+  }
+]
+</script>
+
+<style lang="scss" scoped>
+// 变量定义
+$header-height: 64px;
+$primary-color: #18a058;
+$header-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+$content-padding: 24px;
+$border-radius: 8px;
+$transition-duration: 0.3s;
+
+// 混合器
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+}
+
+@mixin glass-effect {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
 .layout {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7eb 100%);
+
+  :deep(.n-layout-scroll-container) {
+    overflow: hidden;
+  }
 }
 
 .header {
-  height: 56px !important; /* 固定头部高度 */
-  position: sticky;
-  top: 0;
-  z-index: 1000;
-}
+  height: $header-height;
+  padding: 0 $content-padding;
+  box-shadow: $header-shadow;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 100;
 
-.header-content {
-  background: linear-gradient(135deg, #18a058 0%, #0c7a43 100%);
-  color: white;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
+  .header-content {
+    @include flex-center;
+    justify-content: space-between;
+    height: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0 16px;
+  }
 
-.header-content h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
+  .logo {
+    margin-right: 24px;
+  }
+
+  .main-menu {
+    flex: 1;
+  }
 }
 
 .content {
   flex: 1;
-  padding: 16px;
+  padding: $content-padding;
   overflow: auto;
-  background-color: #f5f7fa;
+  position: relative;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+  }
 }
 
-.custom-tabs {
-  background: white;
-  padding: 16px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  min-height: calc(100vh - 120px);
+// 路由切换动画
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity $transition-duration ease;
 }
 
-:root {
-  --primary-color: #18a058;
-  --primary-hover: #0c7a43;
-  --background-color: #f5f7fa;
-  --card-background: #ffffff;
-  --text-color: #333333;
-  --border-color: #eaeaea;
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-/* 确保表格容器不会超出边界 */
-.n-data-table-wrapper {
-  max-width: none !important;
-}
-
-/* 调整卡片内边距 */
-.n-card-content {
-  padding: 16px !important;
-}
-
-/* 调整标签页内容区域 */
-.n-tab-pane {
-  min-height: calc(100vh - 180px);
-}
-
-/* 移除不必要的滚动条 */
-.n-layout-scroll-container {
-  overflow: hidden !important;
-}
-
-/* 移动端适配 */
+// 响应式设计
 @media (max-width: 768px) {
-  .header-content h1 {
-    font-size: 1.2rem;
+  .header {
+    padding: 0 12px;
+
+    .header-content {
+      padding: 0 8px;
+    }
+
+    .logo {
+      display: none;
+    }
   }
 
   .content {
-    padding: 8px;
-  }
-
-  .custom-tabs {
-    padding: 8px;
-    min-height: calc(100vh - 90px);
-  }
-
-  .n-tab-pane {
-    min-height: calc(100vh - 140px);
-    overflow: auto;
-  }
-
-  /* 确保内容可以滚动 */
-  .n-layout-scroll-container {
-    overflow: auto !important;
+    padding: 16px;
   }
 }
 </style>

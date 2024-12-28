@@ -268,4 +268,20 @@ export class CryptoService {
       throw error
     }
   }
+
+  // 获取K线数据
+  async getKlineData(symbol: string, interval: string, limit: number = 1000) {
+    try {
+      const response = await fetch(
+        `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+      )
+      if (!response.ok) {
+        throw new Error('获取K线数据失败')
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('获取K线数据出错:', error)
+      throw error
+    }
+  }
 }
