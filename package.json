@@ -12,10 +12,17 @@
     "coverage": "vitest run --coverage",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
+    "build:node": "esbuild server/index.ts --bundle --platform=node --target=node16 --outfile=dist/server.cjs --external:ws --external:util --external:stream --external:events --external:http --external:https --external:net --external:tls --external:crypto",
+    "start:node": "node dist/server.cjs",
+    "start:pm2": "pm2 start ecosystem.config.cjs",
+    "stop:pm2": "pm2 stop crypto-divergence",
+    "restart:pm2": "pm2 restart crypto-divergence",
+    "logs:pm2": "pm2 logs crypto-divergence",
     "deploy": "vercel --prod"
   },
   "dependencies": {
     "@css-render/vue3-ssr": "^0.15.14",
+    "@types/ws": "^8.5.13",
     "axios": "^1.7.9",
     "echarts": "^5.4.3",
     "esbuild": "^0.24.2",
@@ -24,7 +31,8 @@
     "technicalindicators": "^3.1.0",
     "vue": "^3.5.13",
     "vue-echarts": "^6.6.8",
-    "vue-router": "^4.4.5"
+    "vue-router": "^4.4.5",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.0",

@@ -11,6 +11,9 @@ importers:
       '@css-render/vue3-ssr':
         specifier: ^0.15.14
         version: 0.15.14(vue@3.5.13(typescript@5.6.3))
+      '@types/ws':
+        specifier: ^8.5.13
+        version: 8.5.13
       axios:
         specifier: ^1.7.9
         version: 1.7.9
@@ -38,6 +41,9 @@ importers:
       vue-router:
         specifier: ^4.4.5
         version: 4.5.0(vue@3.5.13(typescript@5.6.3))
+      ws:
+        specifier: ^8.18.0
+        version: 8.18.0
     devDependencies:
       '@tsconfig/node22':
         specifier: ^22.0.0
@@ -707,6 +713,9 @@ packages:
 
   '@types/tough-cookie@4.0.5':
     resolution: {integrity: sha512-/Ad8+nIOV7Rl++6f1BdKxFSMgmoqEoYbHRpPcx3JEfv8VRsQe9Z4mCXeJBzxs7mbHY/XOZZuXlRNfhpVPbs6ZA==}
+
+  '@types/ws@8.5.13':
+    resolution: {integrity: sha512-osM/gWBTPKgHV8XkTunnegTRIsvF6owmf5w+JtAfOw472dptdm0dlGv4xCt6GwQRcC2XVOvvRE/0bAoQcL2QkA==}
 
   '@vitejs/plugin-vue@5.2.1':
     resolution: {integrity: sha512-cxh314tzaWwOLqVes2gnnCtvBDcM1UMdn+iFR+UjAn411dPT3tOmqrJjbMd7koZpMAmBM/GqeV4n9ge7JSiJJQ==}
@@ -2338,6 +2347,10 @@ snapshots:
   '@types/node@6.14.13': {}
 
   '@types/tough-cookie@4.0.5': {}
+
+  '@types/ws@8.5.13':
+    dependencies:
+      '@types/node': 22.10.1
 
   '@vitejs/plugin-vue@5.2.1(vite@6.0.3(@types/node@22.10.1))(vue@3.5.13(typescript@5.6.3))':
     dependencies:
