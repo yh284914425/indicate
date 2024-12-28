@@ -8,15 +8,13 @@ module.exports = {
     env: {
       NODE_ENV: "production",
     },
-    // 错误日志文件
-    error_file: "./logs/err.log",
-    // 输出日志文件
-    out_file: "./logs/out.log",
-    // 日志时间格式
-    time: true,
+    // 完全禁用日志
+    output: '/dev/null',
+    error: '/dev/null',
+    log: false,
     // 自动重启
     autorestart: true,
     // 启动超时时间
-    kill_timeout: 3000,
+    kill_timeout: 3000
   }]
 } 

@@ -17,6 +17,7 @@ interface Signal {
 // 配置
 const config = {
     symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'PEPEUSDT', 'ACTUSDT'], // 主要币种
+    // symbols: ['BTCUSDT', 'ETHUSDT'], // 主要币种
     periods: ['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d'], // 分析周期
     days: 166, // 分析天数
     telegram: {
@@ -89,7 +90,7 @@ async function checkNewSignalsAndNotify(signals: Signal[]) {
     for (const signal of newSignals) {
         const divergenceType = signal.type === 'top' ? '🔴顶背离' : '🟢底背离'
         const message = `
-${divergenceType}信号提醒
+${divergenceType}信号提醒,我是pm2脚本
 
 📊 交易对: ${signal.symbol}
 ⏱ 周期: ${signal.period}
@@ -126,12 +127,14 @@ function initWebSocket(symbols: string[]) {
             try {
                 const message = JSON.parse(data.toString())
                 const { stream, data: wsData } = message
+                console.log(message);
+                
 
                 // 只在K线收盘时进行分析
                 if (wsData.k.x) {
                     const [symbol] = stream.split('@')
                     const period = wsData.k.i
-                    // console.log(`收到${symbol.toUpperCase()} ${period}周期的新K线数据`)
+                    console.log(`收到${symbol.toUpperCase()} ${period}周期的新K线数据`)
 
                     // 分析新数据
                     const signals = await analyzePeriod(
