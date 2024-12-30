@@ -284,4 +284,57 @@ export class CryptoService {
       throw error
     }
   }
+
+  // 获取指定时间范围的K线数据
+  async getKlinesWithTime(
+    symbol: string,
+    interval: string,
+    startTime: number,
+    endTime: number
+  ): Promise<KlineData[]> {
+    try {
+      const params: any = {
+        symbol,
+        interval,
+        startTime,
+        endTime,
+        limit: 1000
+      }
+
+      let allKlines: KlineData[] = [];
+      let currentStartTime = startTime;
+
+      while (currentStartTime < endTime) {
+        params.startTime = currentStartTime;
+        const response = await axios.get(`${this.baseUrl}/api/v3/klines`, { params });
+        const klines = response.data.map((k: any[]) => ({
+          openTime: k[0],
+          open: k[1],
+          high: k[2],
+          low: k[3],
+          close: k[4],
+          volume: k[5],
+          closeTime: k[6],
+          quoteVolume: k[7],
+          trades: k[8],
+          buyBaseVolume: k[9],
+          buyQuoteVolume: k[10],
+          ignore: k[11]
+        }));
+
+        if (klines.length === 0) break;
+
+        allKlines = [...allKlines, ...klines];
+        currentStartTime = klines[klines.length - 1].closeTime + 1;
+
+        // 添加延迟以避免触发频率限制
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      return allKlines;
+    } catch (error) {
+      console.error(`获取K线数据失败 ${symbol}:`, error);
+      throw error;
+    }
+  }
 }

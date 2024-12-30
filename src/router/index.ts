@@ -11,8 +11,7 @@ const router = createRouter({
   routes: [
     {
       path: '/',
-      name: 'home',
-      component: HomeView
+      redirect: '/multi-period'
     },
     {
       path: '/single',
