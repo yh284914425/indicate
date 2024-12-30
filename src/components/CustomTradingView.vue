@@ -49,7 +49,7 @@ import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { createChart, ColorType, CrosshairMode } from 'lightweight-charts'
 import { useMessage } from 'naive-ui'
 import { CryptoService } from '../services/cryptoService'
-import { WebSocketService } from '../services/websocketService'
+import { ChartWebSocketService } from '../services/chartWebsocketService'
 
 const message = useMessage()
 const cryptoService = new CryptoService()
@@ -117,7 +117,7 @@ const symbolOptions = ref<Array<{
 }>>([])
 
 // WebSocket相关
-const wsService = ref<WebSocketService | null>(null)
+const wsService = ref<ChartWebSocketService | null>(null)
 const wsEnabled = ref(true)
 
 // 添加数据范围追踪
@@ -133,28 +133,28 @@ const initWebSocket = () => {
   // 关闭旧的连接
   if (wsService.value) {
     wsService.value.disconnect()
+    wsService.value = null
   }
 
   // 创建新的WebSocket连接
-  wsService.value = new WebSocketService((data: { 
-    symbol: string; 
-    period: string; 
-    kline: { 
-      t: number;    // 开盘时间
-      o: string;    // 开盘价
-      h: string;    // 最高价
-      l: string;    // 最低价
-      c: string;    // 收盘价
-      v: string;    // 成交量
-    } 
+  wsService.value = new ChartWebSocketService((data: {
+    symbol: string;
+    period: string;
+    kline: {
+      t: number;
+      o: string;
+      h: string;
+      l: string;
+      c: string;
+      v: string;
+    }
   }) => {
-    if (!candlestickSeries.value) return
-    
-    // 检查是否是当前选中的交易对和时间周期
     if (data.symbol.toLowerCase() !== selectedSymbol.value.toLowerCase() || 
         data.period !== selectedInterval.value) {
       return
     }
+
+    if (!candlestickSeries.value || !volumeSeries.value) return
 
     const kline = {
       time: data.kline.t / 1000,
@@ -168,16 +168,14 @@ const initWebSocket = () => {
     // 更新K线数据
     candlestickSeries.value.update(kline)
 
-    // 更新成交量
-    if (volumeSeries.value && showVolume.value) {
-      volumeSeries.value.update({
-        time: kline.time,
-        value: kline.volume,
-        color: kline.close >= kline.open ? '#26a69a' : '#ef5350'
-      })
-    }
+    // 始终更新成交量数据
+    volumeSeries.value.update({
+      time: kline.time,
+      value: kline.volume,
+      color: kline.close >= kline.open ? '#26a69a' : '#ef5350'
+    })
 
-    // 实时更新指标
+    // 更新其他指标
     if (showMA.value) {
       updateMAReal(kline)
     }
@@ -190,7 +188,7 @@ const initWebSocket = () => {
   })
 
   // 连接WebSocket
-  wsService.value.connect([selectedSymbol.value])
+  wsService.value.connect(selectedSymbol.value, selectedInterval.value)
 }
 
 // 实时更新MA
@@ -337,17 +335,6 @@ const calculateMACD = (data: any[], fastPeriod = 12, slowPeriod = 26, signalPeri
 const initChart = () => {
   if (!chartContainer.value) return
 
-  // 设置时间刻度配置
-  const timeScaleConfig: Record<string, { timeVisible: boolean; secondsVisible: boolean }> = {
-    '1m': { timeVisible: true, secondsVisible: false },
-    '5m': { timeVisible: true, secondsVisible: false },
-    '15m': { timeVisible: true, secondsVisible: false },
-    '30m': { timeVisible: true, secondsVisible: false },
-    '1h': { timeVisible: true, secondsVisible: false },
-    '4h': { timeVisible: true, secondsVisible: false },
-    '1d': { timeVisible: false, secondsVisible: false }
-  }
-
   // 创建图表实例
   chart.value = createChart(chartContainer.value, {
     width: chartContainer.value.clientWidth,
@@ -378,34 +365,12 @@ const initChart = () => {
     },
     timeScale: {
       borderColor: '#f0f0f0',
-      ...timeScaleConfig[selectedInterval.value],
+      timeVisible: true,
+      secondsVisible: false,
       rightOffset: 12,
-      barSpacing: selectedInterval.value === '1d' ? 20 : 12,
+      barSpacing: 12,
       fixLeftEdge: true,
       lockVisibleTimeRangeOnResize: true,
-      tickMarkFormatter: (time: number) => {
-        const date = new Date(time * 1000)
-        if (selectedInterval.value === '1d') {
-          return date.toISOString().slice(0, 10)
-        } else if (['4h', '1h'].includes(selectedInterval.value)) {
-          const dateStr = date.toISOString().slice(0, 10)
-          const timeStr = date.toTimeString().slice(0, 5)
-          return `${dateStr} ${timeStr}`
-        } else {
-          return date.toTimeString().slice(0, 5)
-        }
-      }
-    },
-    handleScroll: {
-      mouseWheel: true,
-      pressedMouseMove: true,
-      horzTouchDrag: true,
-      vertTouchDrag: true,
-    },
-    handleScale: {
-      axisPressedMouseMove: true,
-      mouseWheel: true,
-      pinch: true,
     },
   })
 
@@ -422,20 +387,18 @@ const initChart = () => {
     },
   })
 
-  // 创建成交量图表
-  if (showVolume.value) {
-    volumeSeries.value = chart.value.addHistogramSeries({
-      color: '#26a69a',
-      priceFormat: {
-        type: 'volume',
-      },
-      priceScaleId: 'volume',
-      scaleMargins: {
-        top: 0.85,
-        bottom: 0.05,
-      },
-    })
-  }
+  // 始终创建成交量图表
+  volumeSeries.value = chart.value.addHistogramSeries({
+    color: '#26a69a',
+    priceFormat: {
+      type: 'volume',
+    },
+    priceScaleId: 'volume',
+    scaleMargins: {
+      top: 0.85,
+      bottom: 0.05,
+    },
+  })
 
   // 添加图例
   const legendContainer = ref<HTMLElement | null>(null)
@@ -453,8 +416,8 @@ const initChart = () => {
       const { open, high, low, close } = price
       const date = new Date(param.time * 1000)
       const timeStr = selectedInterval.value === '1d' 
-        ? date.toISOString().slice(0, 10)
-        : `${date.toISOString().slice(0, 10)} ${date.toTimeString().slice(0, 5)}`
+        ? date.toLocaleDateString()
+        : `${date.toLocaleDateString()} ${date.toLocaleTimeString().slice(0, 5)}`
 
       legendContainer.value.innerHTML = `
         <div class="legend-line">
@@ -483,34 +446,15 @@ const initChart = () => {
     }
   })
 
-  // 添加窗口大小调整监听
-  const handleResize = () => {
-    if (chartContainer.value && chart.value) {
-      chart.value.applyOptions({
-        width: chartContainer.value.clientWidth,
-      })
-    }
-  }
-
-  window.addEventListener('resize', handleResize)
-
   // 添加时间范围变化监听
-  chart.value.timeScale().subscribeVisibleTimeRangeChange(function(this: void) {
+  chart.value.timeScale().subscribeVisibleTimeRangeChange(() => {
     const visibleRange = chart.value.timeScale().getVisibleRange()
     if (!visibleRange) return
 
     // 如果可见范围的开始时间接近当前数据范围的开始时间，加载更多历史数据
     if (visibleRange.from && currentDataRange.value.from > 0 && 
-        visibleRange.from - currentDataRange.value.from < 24 * 60 * 60) { // 当剩余1天的数据时加载更多
+        visibleRange.from - currentDataRange.value.from < 24 * 60 * 60) {
       loadMoreHistoricalData()
-    }
-  })
-
-  // 组件卸载时清理
-  onUnmounted(() => {
-    window.removeEventListener('resize', handleResize)
-    if (chart.value) {
-      chart.value.remove()
     }
   })
 }
@@ -518,7 +462,6 @@ const initChart = () => {
 // 获取K线数据
 const fetchKlineData = async () => {
   try {
-    // 计算开始时间
     const endTime = Date.now()
     let startTime: number | undefined
     
@@ -542,6 +485,14 @@ const fetchKlineData = async () => {
       startTime = endTime - (limit * getIntervalMinutes(selectedInterval.value) * 60 * 1000)
     }
 
+    // 移动日志打印到这里，在startTime初始化之后
+    console.log('请求参数:', {
+      symbol: selectedSymbol.value,
+      interval: selectedInterval.value,
+      startTime,
+      endTime
+    })
+
     // 使用getKlines方法获取数据
     const klineData = await cryptoService.getKlines(
       selectedSymbol.value,
@@ -550,6 +501,14 @@ const fetchKlineData = async () => {
       startTime,
       endTime
     )
+
+    console.log('K线返回数据:', klineData)
+    
+    // 打印最新K线时间
+    if(klineData.length > 0) {
+      const lastKline = klineData[klineData.length - 1]
+      console.log('最新K线时间:', new Date(lastKline.openTime).toLocaleString())
+    }
 
     // 格式化数据
     const formattedData = klineData.map((item) => ({
@@ -600,8 +559,7 @@ const fetchKlineData = async () => {
     }
 
   } catch (error) {
-    message.error('获取K线数据失败')
-    console.error(error)
+    console.error('获取K线数据失败:', error)
   }
 }
 
@@ -804,6 +762,10 @@ const cleanupChart = () => {
 
 // 修改处理交易对变化的函数
 const handleSymbolChange = async () => {
+  if (wsService.value) {
+    wsService.value.disconnect()
+    wsService.value = null
+  }
   cleanupChart()
   initChart()
   await fetchKlineData()
@@ -812,6 +774,10 @@ const handleSymbolChange = async () => {
 
 // 修改处理时间周期变化的函数
 const handleIntervalChange = async () => {
+  if (wsService.value) {
+    wsService.value.disconnect()
+    wsService.value = null
+  }
   cleanupChart()
   initChart()
   await fetchKlineData()
@@ -882,33 +848,49 @@ const loadMoreHistoricalData = async () => {
       volume: parseFloat(item.volume),
     }))
 
+    // 确保数据按时间升序排序
+    formattedData.sort((a, b) => a.time - b.time)
+
     // 更新数据范围
-    currentDataRange.value.from = formattedData[0].time
+    if (formattedData.length > 0) {
+      currentDataRange.value.from = formattedData[0].time
+    }
 
     // 更新K线图数据
     if (candlestickSeries.value) {
       const currentData = candlestickSeries.value.data()
-      candlestickSeries.value.setData([...formattedData, ...currentData])
-    }
+      
+      // 确保新数据和现有数据不重叠，并且按时间正确排序
+      const allData = [...formattedData, ...currentData].sort((a, b) => a.time - b.time)
+      
+      // 去除重复的数据点
+      const uniqueData = allData.filter((item, index, self) => 
+        index === 0 || item.time !== self[index - 1].time
+      )
 
-    // 更新成交量数据
-    if (volumeSeries.value && showVolume.value) {
-      const volumeData = formattedData.map((item) => ({
-        time: item.time,
-        value: item.volume,
-        color: item.close >= item.open ? '#26a69a' : '#ef5350',
-      }))
-      const currentVolumeData = volumeSeries.value.data()
-      volumeSeries.value.setData([...volumeData, ...currentVolumeData])
-    }
+      // 设置合并后的数据
+      candlestickSeries.value.setData(uniqueData)
 
-    // 更新指标数据
-    const allData = [...formattedData, ...candlestickSeries.value.data()]
-    if (showRSI.value) {
-      updateRSI(allData)
-    }
-    if (showMACD.value) {
-      updateMACD(allData)
+      // 更新成交量数据
+      if (volumeSeries.value && showVolume.value) {
+        const volumeData = uniqueData.map((item) => ({
+          time: item.time,
+          value: item.volume,
+          color: item.close >= item.open ? '#26a69a' : '#ef5350',
+        }))
+        volumeSeries.value.setData(volumeData)
+      }
+
+      // 更新指标数据
+      if (showRSI.value) {
+        updateRSI(uniqueData)
+      }
+      if (showMACD.value) {
+        updateMACD(uniqueData)
+      }
+      if (showMA.value) {
+        updateMA(uniqueData)
+      }
     }
 
   } catch (error) {
