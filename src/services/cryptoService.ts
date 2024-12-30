@@ -337,4 +337,93 @@ export class CryptoService {
       throw error;
     }
   }
+
+  // 合成更大周期的K线数据
+  mergeKlines(klines: KlineData[], periodMultiplier: number): KlineData[] {
+    const result: KlineData[] = []
+    for (let i = 0; i < klines.length; i += periodMultiplier) {
+      if (i + periodMultiplier > klines.length) break
+      
+      const periodKlines = klines.slice(i, i + periodMultiplier)
+      const mergedKline: KlineData = {
+        openTime: periodKlines[0].openTime,
+        open: periodKlines[0].open,
+        high: Math.max(...periodKlines.map(k => parseFloat(k.high))).toString(),
+        low: Math.min(...periodKlines.map(k => parseFloat(k.low))).toString(),
+        close: periodKlines[periodMultiplier - 1].close,
+        volume: periodKlines.reduce((sum, k) => sum + parseFloat(k.volume), 0).toString(),
+        closeTime: periodKlines[periodMultiplier - 1].closeTime,
+        quoteVolume: periodKlines.reduce((sum, k) => sum + parseFloat(k.quoteVolume), 0).toString(),
+        trades: periodKlines.reduce((sum, k) => sum + k.trades, 0),
+        buyBaseVolume: periodKlines.reduce((sum, k) => sum + parseFloat(k.buyBaseVolume), 0).toString(),
+        buyQuoteVolume: periodKlines.reduce((sum, k) => sum + parseFloat(k.buyQuoteVolume), 0).toString(),
+        ignore: "0"
+      }
+      result.push(mergedKline)
+    }
+    return result
+  }
+
+  // 获取一年的15分钟数据并合成其他周期
+  async getYearlyData(
+    symbol: string,
+    startTime: number,
+    endTime: number,
+    progressCallback?: (progress: number) => void
+  ): Promise<{
+    '15m': { klines: KlineData[], indicators: any },
+    '30m': { klines: KlineData[], indicators: any },
+    '1h': { klines: KlineData[], indicators: any },
+    '2h': { klines: KlineData[], indicators: any },
+    '4h': { klines: KlineData[], indicators: any },
+    '6h': { klines: KlineData[], indicators: any },
+    '12h': { klines: KlineData[], indicators: any },
+    '1d': { klines: KlineData[], indicators: any },
+    '1w': { klines: KlineData[], indicators: any }
+  }> {
+    // 获取15分钟数据
+    const allKlines: KlineData[] = []
+    let currentStartTime = startTime
+    const batchSize = 1000
+    let totalBatches = Math.ceil((endTime - startTime) / (15 * 60 * 1000) / batchSize)
+    let completedBatches = 0
+
+    while (currentStartTime < endTime) {
+      const klines = await this.getKlines(symbol, '15m', batchSize, currentStartTime)
+      if (klines.length === 0) break
+
+      allKlines.push(...klines)
+      currentStartTime = klines[klines.length - 1].closeTime + 1
+
+      completedBatches++
+      if (progressCallback) {
+        progressCallback((completedBatches / totalBatches) * 100)
+      }
+
+      // 添加延迟以避免API限制
+      await new Promise(resolve => setTimeout(resolve, 100))
+    }
+
+    // 合成各个周期的数据
+    const periodMultipliers = {
+      '15m': 1,
+      '30m': 2,
+      '1h': 4,
+      '2h': 8,
+      '4h': 16,
+      '6h': 24,
+      '12h': 48,
+      '1d': 96,
+      '1w': 96 * 7
+    }
+
+    const result: any = {}
+    Object.entries(periodMultipliers).forEach(([period, multiplier]) => {
+      const klines = multiplier === 1 ? allKlines : this.mergeKlines(allKlines, multiplier)
+      const indicators = this.calculateIndicators(klines)
+      result[period] = { klines, indicators }
+    })
+
+    return result
+  }
 }

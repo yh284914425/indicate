@@ -268,163 +268,94 @@ const exportData = async () => {
   try {
     exporting.value = true
     const selectedYear = new Date(selectedMonth.value).getFullYear()
-    const zip = new JSZip()
+    const startTime = new Date(selectedYear, 0, 1).getTime()
+    const endTime = new Date(selectedYear + 1, 0, 1).getTime()
     
-    // 创建一个文件夹来存储Excel文件
-    const folder = zip.folder(`${selectedSymbol.value}_${selectedYear}`)
+    // 显示进度
+    const progressBar = message.loading('正在获取数据...', { duration: 0 })
     
-    // 处理12个月的数据
-    for (let month = 0; month < 12; month++) {
-      message.info(`正在处理 ${month + 1} 月数据...`)
-      
-      // 计算每个月的起止时间
-      const startTime = new Date(selectedYear, month, 1).getTime()
-      const endTime = new Date(selectedYear, month + 1, 0, 23, 59, 59, 999).getTime()
-      
-      // 如果是未来的月份，跳过
-      if (startTime > Date.now()) {
-        continue
+    // 获取并合成所有周期的数据
+    const allData = await cryptoService.getYearlyData(
+      selectedSymbol.value,
+      startTime,
+      endTime,
+      (progress) => {
+        progressBar.content = `正在获取数据... ${Math.floor(progress)}%`
+      }
+    )
+    
+    progressBar.destroy()
+    message.info('正在处理数据...')
+    
+    // 使用15分钟数据作为基准时间线
+    const baseKlines = allData['15m'].klines
+    const exportRows: any[] = []
+    
+    // 遍历每个15分钟数据点
+    for (let i = 0; i < baseKlines.length; i++) {
+      const time = new Date(baseKlines[i].openTime)
+      const row: any = {
+        '时间': time.toLocaleString(),
+        '15分钟价格': parseFloat(baseKlines[i].close).toFixed(8),
+        '15分钟J值': allData['15m'].indicators.j[i].toFixed(2),
+        '15分钟背离': allData['15m'].indicators.bottomDivergence[i] ? '底背离' : 
+                    (allData['15m'].indicators.topDivergence[i] ? '顶背离' : '')
       }
       
-      // 获取所有时间周期的数据
-      const intervals = ['1h', '2h', '4h', '6h', '12h', '1d', '1w'] as const
-      const periodMilliseconds = {
-        '1h': 60 * 60 * 1000,
-        '2h': 2 * 60 * 60 * 1000,
-        '4h': 4 * 60 * 60 * 1000,
-        '6h': 6 * 60 * 60 * 1000,
-        '12h': 12 * 60 * 60 * 1000,
-        '1d': 24 * 60 * 60 * 1000,
-        '1w': 7 * 24 * 60 * 60 * 1000
-      } as const
-
-      const allData = await Promise.all(intervals.map(async interval => {
-        const klines = await cryptoService.getKlinesWithTime(
-          selectedSymbol.value,
-          interval,
-          startTime,
-          endTime
+      // 添加其他周期的数据
+      Object.entries(allData).forEach(([period, data]) => {
+        if (period === '15m') return // 跳过15分钟数据，因为已经添加过了
+        
+        // 找到对应的数据点
+        const periodData = data.klines.find(k => 
+          k.openTime <= baseKlines[i].openTime && 
+          k.closeTime >= baseKlines[i].closeTime
         )
-        const indicators = cryptoService.calculateIndicators(klines)
-        return { klines, indicators, interval }
-      }))
-
-      // 准备导出数据
-      const exportRows: any[] = []
-      
-      // 使用1小时数据作为基准
-      const baseData = allData[0] // 1小时数据
-      
-      // 为其他周期创建时间映射
-      const periodDataMaps = new Map()
-      
-      // 创建每个周期的数据映射
-      allData.slice(1).forEach((periodData, index) => {
-        const period = intervals[index + 1]
-        const periodMs = periodMilliseconds[period]
-        const dataMap = new Map()
         
-        periodData.klines.forEach((kline, idx) => {
-          // 对于周线数据，需要特殊处理时间对齐
-          let periodTimestamp
-          if (period === '1w') {
-            // 获取这个时间戳所在的周一凌晨时间
-            const date = new Date(kline.openTime)
-            const day = date.getDay() || 7 // 将周日的0转换为7
-            const mondayTime = new Date(date.getTime() - (day - 1) * 24 * 60 * 60 * 1000)
-            mondayTime.setHours(0, 0, 0, 0)
-            periodTimestamp = mondayTime.getTime()
-          } else {
-            // 其他周期按原来的方式处理
-            periodTimestamp = Math.floor(kline.openTime / periodMs) * periodMs
+        if (periodData) {
+          row[`${period}价格`] = parseFloat(periodData.close).toFixed(8)
+          const index = data.klines.indexOf(periodData)
+          if (index !== -1) {
+            row[`${period}J值`] = data.indicators.j[index].toFixed(2)
+            row[`${period}背离`] = data.indicators.bottomDivergence[index] ? '底背离' : 
+                                  (data.indicators.topDivergence[index] ? '顶背离' : '')
           }
-          
-          dataMap.set(periodTimestamp, {
-            kline,
-            index: idx
-          })
-        })
-        
-        periodDataMaps.set(period, dataMap)
-      })
-      
-      // 遍历1小时数据
-      for (let i = 0; i < baseData.klines.length; i++) {
-        const kline1h = baseData.klines[i]
-        const time = new Date(kline1h.openTime)
-        
-        const row: any = {
-          '时间': time.toLocaleString(),
-          '1小时价格': parseFloat(kline1h.close).toFixed(8),
-          '1小时J值': baseData.indicators.j[i].toFixed(2),
-          '1小时背离': baseData.indicators.bottomDivergence[i] ? '底背离' : 
-                      (baseData.indicators.topDivergence[i] ? '顶背离' : '')
+        } else {
+          row[`${period}价格`] = ''
+          row[`${period}J值`] = ''
+          row[`${period}背离`] = ''
         }
-        
-        // 添加其他周期的数据
-        intervals.slice(1).forEach((period, index) => {
-          let periodTimestamp
-          if (period === '1w') {
-            // 对于周线，找到对应的周一凌晨时间
-            const day = time.getDay() || 7
-            const mondayTime = new Date(time.getTime() - (day - 1) * 24 * 60 * 60 * 1000)
-            mondayTime.setHours(0, 0, 0, 0)
-            periodTimestamp = mondayTime.getTime()
-          } else {
-            const periodMs = periodMilliseconds[period]
-            periodTimestamp = Math.floor(kline1h.openTime / periodMs) * periodMs
-          }
-          
-          const periodData = periodDataMaps.get(period).get(periodTimestamp)
-          
-          row[`${period}价格`] = periodData ? parseFloat(periodData.kline.close).toFixed(8) : ''
-          row[`${period}J值`] = periodData ? 
-            allData[index + 1].indicators.j[periodData.index].toFixed(2) : ''
-          row[`${period}背离`] = periodData ? (
-            allData[index + 1].indicators.bottomDivergence[periodData.index] ? '底背离' : 
-            allData[index + 1].indicators.topDivergence[periodData.index] ? '顶背离' : ''
-          ) : ''
-        })
-        
-        exportRows.push(row)
-      }
-
-      // 创建工作簿
-      const wb = XLSX.utils.book_new()
-      const ws = XLSX.utils.json_to_sheet(exportRows)
-      
-      // 设置列宽
-      const colWidths = [
-        { wch: 20 } // 时间
-      ]
-      
-      // 为每个周期添加列宽
-      intervals.forEach(period => {
-        colWidths.push(
-          { wch: 15 }, // 价格
-          { wch: 12 }, // J值
-          { wch: 10 }  // 背离
-        )
       })
       
-      ws['!cols'] = colWidths
-      
-      // 添加工作表到工作簿
-      XLSX.utils.book_append_sheet(wb, ws, '背离数据')
-      
-      // 将Excel文件添加到zip
-      const monthStr = String(month + 1).padStart(2, '0')
-      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
-      folder?.file(`${selectedSymbol.value}_divergence_${selectedYear}${monthStr}.xlsx`, excelBuffer)
-      
-      // 添加延迟以避免API限制
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      exportRows.push(row)
     }
     
-    // 生成zip文件
-    const zipContent = await zip.generateAsync({ type: 'blob' })
-    const zipFileName = `${selectedSymbol.value}_${selectedYear}_divergence.zip`
-    saveAs(zipContent, zipFileName)
+    // 创建工作簿
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(exportRows)
+    
+    // 设置列宽
+    const colWidths = [
+      { wch: 20 } // 时间
+    ]
+    
+    // 为每个周期添加列宽
+    Object.keys(allData).forEach(() => {
+      colWidths.push(
+        { wch: 15 }, // 价格
+        { wch: 12 }, // J值
+        { wch: 10 }  // 背离
+      )
+    })
+    
+    ws['!cols'] = colWidths
+    
+    // 添加工作表到工作簿
+    XLSX.utils.book_append_sheet(wb, ws, '背离数据')
+    
+    // 导出文件
+    const fileName = `${selectedSymbol.value}_${selectedYear}_all_periods.xlsx`
+    XLSX.writeFile(wb, fileName)
     
     message.success('导出成功')
   } catch (error) {
