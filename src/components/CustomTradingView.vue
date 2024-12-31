@@ -54,6 +54,7 @@ import dayjs from 'dayjs'
 import 'dayjs/locale/zh-cn'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
+import { Indicators } from '@/utils/indicators'
 
 // 配置 dayjs 插件
 dayjs.extend(utc)
@@ -73,6 +74,11 @@ let candlestickSeries: ISeriesApi<"Candlestick"> | null = null
 let volumeSeries: ISeriesApi<"Histogram"> | null = null
 let wsService: SinglePeriodWebsocketService | null = null
 const historyService = new CryptoHistoryService()
+let macdSeries: ISeriesApi<"Line"> | null = null
+let signalSeries: ISeriesApi<"Line"> | null = null
+let histogramSeries: ISeriesApi<"Histogram"> | null = null
+let bullishMarkers: ISeriesApi<"Line"> | null = null
+let bearishMarkers: ISeriesApi<"Line"> | null = null
 
 const intervalOptions: SelectOption[] = [
   { label: '1分钟', value: '1m' },
@@ -129,7 +135,7 @@ const initChart = () => {
       borderColor: '#f0f0f0',
       scaleMargins: {
         top: 0.1,
-        bottom: 0.3,
+        bottom: 0.4,
       },
     },
     timeScale: {
@@ -177,25 +183,65 @@ const initChart = () => {
   })
 
   // 添加成交量
-  const volumeOptions = {
+  volumeSeries = chart.addHistogramSeries({
     color: '#26a69a',
     priceFormat: {
-      type: 'volume' as const,
+      type: 'volume',
       precision: 3,
     },
     priceScaleId: 'volume',
-    base: 0,
-  }
-  volumeSeries = chart.addHistogramSeries(volumeOptions)
+  })
 
   // 设置成交量的显示区域
   chart.priceScale('volume').applyOptions({
     scaleMargins: {
       top: 0.7,
-      bottom: 0.0,
+      bottom: 0,
     },
     visible: true,
-    autoScale: true,
+  })
+
+  // 添加MACD指标
+  macdSeries = chart.addLineSeries({
+    color: '#2196F3',
+    lineWidth: 2,
+    priceScaleId: 'macd',
+    title: 'MACD',
+  })
+
+  signalSeries = chart.addLineSeries({
+    color: '#FF9800',
+    lineWidth: 2,
+    priceScaleId: 'macd',
+    title: 'Signal',
+  })
+
+  histogramSeries = chart.addHistogramSeries({
+    color: '#26a69a',
+    priceScaleId: 'macd',
+    title: 'Histogram',
+  })
+
+  // 设置MACD的显示区域
+  chart.priceScale('macd').applyOptions({
+    scaleMargins: {
+      top: 0.7,
+      bottom: 0,
+    },
+    visible: true,
+  })
+
+  // 添加背离标记
+  bullishMarkers = chart.addLineSeries({
+    lastValueVisible: false,
+    priceLineVisible: false,
+    crosshairMarkerVisible: false,
+  })
+
+  bearishMarkers = chart.addLineSeries({
+    lastValueVisible: false,
+    priceLineVisible: false,
+    crosshairMarkerVisible: false,
   })
 
   // 设置工具提示
@@ -279,6 +325,10 @@ const updateChart = (data: any) => {
     if (data.kline.x) {
       candlestickSeries.update(candleData)
       volumeSeries.update(volumeData)
+      
+      // 获取所有K线数据并更新MACD
+      const allData = candlestickSeries.data() as CandlestickData[]
+      updateMACD([...allData, candleData])
     } else {
       candlestickSeries.update(candleData)
     }
@@ -389,6 +439,9 @@ const loadHistoricalData = async () => {
     candlestickSeries.setData(candleData)
     volumeSeries.setData(volumeData)
 
+    // 更新MACD
+    updateMACD(candleData)
+
     // 调整视图以显示所有数据
     chart?.timeScale().fitContent()
   } catch (error) {
@@ -454,6 +507,78 @@ const logKlineData = (data: any) => {
     成交量: data.kline.v,
     是否完成: data.kline.x ? '是' : '否'
   })
+}
+
+const updateMACD = (data: CandlestickData[]) => {
+  if (!macdSeries || !signalSeries || !histogramSeries) return
+
+  try {
+    // 提取收盘价
+    const closePrices = data.map(d => d.close)
+    
+    // 计算MACD
+    const macdData = Indicators.calculateMACD(closePrices)
+    
+    // 检测背离
+    const divergences = Indicators.detectDivergence(
+      closePrices,
+      macdData,
+      20 // 回看周期
+    )
+
+    // 更新MACD数据
+    const macdSeriesData = macdData.map((d, i) => ({
+      time: data[i].time,
+      value: d.macd
+    }))
+    
+    const signalSeriesData = macdData.map((d, i) => ({
+      time: data[i].time,
+      value: d.signal
+    }))
+    
+    const histogramSeriesData = macdData.map((d, i) => ({
+      time: data[i].time,
+      value: d.histogram,
+      color: d.histogram >= 0 ? '#26a69a' : '#ef5350'
+    }))
+
+    // 清除旧数据
+    macdSeries.setData([])
+    signalSeries.setData([])
+    histogramSeries.setData([])
+
+    // 设置新数据
+    macdSeries.setData(macdSeriesData)
+    signalSeries.setData(signalSeriesData)
+    histogramSeries.setData(histogramSeriesData)
+
+    // 标记背离
+    if (bullishMarkers && bearishMarkers) {
+      // 看涨背离标记
+      const bullishMarkerData = divergences.bullish.map(i => ({
+        time: data[i].time,
+        position: 'belowBar' as const,
+        color: '#26a69a',
+        shape: 'arrowUp' as const,
+        text: '看涨背离'
+      }))
+
+      // 看跌背离标记
+      const bearishMarkerData = divergences.bearish.map(i => ({
+        time: data[i].time,
+        position: 'aboveBar' as const,
+        color: '#ef5350',
+        shape: 'arrowDown' as const,
+        text: '看跌背离'
+      }))
+
+      bullishMarkers.setMarkers(bullishMarkerData)
+      bearishMarkers.setMarkers(bearishMarkerData)
+    }
+  } catch (error) {
+    console.error('更新MACD失败:', error)
+  }
 }
 
 onMounted(async () => {
