@@ -19,7 +19,7 @@
             placeholder="选择时间周期"
             @update:value="changeInterval"
             style="width: 120px"
-          />
+         />
           <n-space>
             <n-tag
               v-for="indicator in indicators"
@@ -135,7 +135,7 @@ const initChart = () => {
       borderColor: '#f0f0f0',
       scaleMargins: {
         top: 0.1,
-        bottom: 0.4,
+        bottom: 0.5,
       },
     },
     timeScale: {
@@ -147,6 +147,8 @@ const initChart = () => {
       rightOffset: 12,
       fixLeftEdge: false,
       fixRightEdge: false,
+      rightBarStaysOnScroll: true,
+      shiftVisibleRangeOnNewBar: true,
       tickMarkFormatter: (time: number) => {
         const date = new Date(time * 1000)
         const hours = String(date.getHours()).padStart(2, '0')
@@ -195,8 +197,8 @@ const initChart = () => {
   // 设置成交量的显示区域
   chart.priceScale('volume').applyOptions({
     scaleMargins: {
-      top: 0.7,
-      bottom: 0,
+      top: 0.5,
+      bottom: 0.3,
     },
     visible: true,
   })
@@ -228,7 +230,7 @@ const initChart = () => {
       top: 0.7,
       bottom: 0,
     },
-    visible: true,
+    visible: true
   })
 
   // 添加背离标记
@@ -236,12 +238,16 @@ const initChart = () => {
     lastValueVisible: false,
     priceLineVisible: false,
     crosshairMarkerVisible: false,
+    lineVisible: false,  // 使用lineVisible替代lineWidth
+    priceScaleId: 'macd'
   })
 
   bearishMarkers = chart.addLineSeries({
     lastValueVisible: false,
     priceLineVisible: false,
     crosshairMarkerVisible: false,
+    lineVisible: false,  // 使用lineVisible替代lineWidth
+    priceScaleId: 'macd'
   })
 
   // 设置工具提示
@@ -262,12 +268,7 @@ const initChart = () => {
     const hours = String(date.getHours()).padStart(2, '0')
     const minutes = String(date.getMinutes()).padStart(2, '0')
     
-    console.log('光标时间信息:', {
-      原始时间戳: timestamp,
-      UTC时间: date.toISOString(),
-      本地时间: date.toLocaleString('zh-CN'),
-      显示时间: `${hours}:${minutes}`
-    })
+
   })
 
   // 处理窗口大小变化
@@ -286,7 +287,10 @@ const initChart = () => {
     if (!range) return
     
     // 当滚动到左侧20%的位置时，加载更多历史数据
-    if (range.from <= range.to * 0.2 && !isLoading.value) {
+    const visibleBars = range.to - range.from
+    const leftEdgePos = range.from / visibleBars
+
+    if (leftEdgePos <= 0.2 && !isLoading.value) {
       loadMoreHistoricalData()
     }
   })
@@ -297,17 +301,6 @@ const updateChart = (data: any) => {
 
   try {
     const timestamp = Math.floor(Number(data.kline.t) / 1000)
-    const date = new Date(timestamp * 1000)
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    
-    console.log('K线时间信息:', {
-      原始时间戳: timestamp,
-      UTC时间: date.toISOString(),
-      本地时间: date.toLocaleString('zh-CN'),
-      显示时间: `${hours}:${minutes}`
-    })
-    
     const candleData: CandlestickData = {
       time: timestamp as Time,
       open: parseFloat(data.kline.o),
@@ -344,11 +337,6 @@ const loadMoreHistoricalData = async () => {
   try {
     isLoading.value = true
     currentPage.value++
-    
-    console.log('加载更多历史数据:', {
-      页码: currentPage.value,
-      每页数量: pageSize
-    })
 
     const klines = await historyService.getKlines(
       'BTCUSDT', 
@@ -357,10 +345,7 @@ const loadMoreHistoricalData = async () => {
       currentPage.value
     )
     
-    if (klines.length === 0) {
-      console.log('没有更多历史数据了')
-      return
-    }
+    if (klines.length === 0) return
 
     // 转换K线数据
     const candleData = klines.map(k => ({
@@ -369,7 +354,7 @@ const loadMoreHistoricalData = async () => {
       high: k.high,
       low: k.low,
       close: k.close
-    }))
+    })) as CandlestickData<Time>[]  // 添加类型断言
     
     // 转换成交量数据
     const volumeData = klines.map(k => ({
@@ -379,8 +364,8 @@ const loadMoreHistoricalData = async () => {
     }))
 
     // 获取现有数据
-    const existingData = await candlestickSeries.data()
-    const existingVolume = await volumeSeries.data()
+    const existingData = candlestickSeries.data() as CandlestickData<Time>[]
+    const existingVolume = volumeSeries.data()
 
     // 合并并排序数据
     const newCandleData = [...candleData, ...existingData].sort((a, b) => 
@@ -393,6 +378,9 @@ const loadMoreHistoricalData = async () => {
     // 更新数据
     candlestickSeries.setData(newCandleData)
     volumeSeries.setData(newVolumeData)
+    
+    // 更新MACD和背离
+    updateMACD(newCandleData)
 
   } catch (error) {
     console.error('加载更多历史数据失败:', error)
@@ -430,10 +418,6 @@ const loadHistoricalData = async () => {
       value: k.volume,
       color: k.close >= k.open ? '#26a69a' : '#ef5350'
     }))
-
-    // 清除旧数据
-    candlestickSeries.setData([])
-    volumeSeries.setData([])
 
     // 设置新数据
     candlestickSeries.setData(candleData)
@@ -495,18 +479,7 @@ const changeInterval = async () => {
 }
 
 const logKlineData = (data: any) => {
-  console.log('当前计算机时间'+dayjs().format('YYYY-MM-DD HH:mm:ss'))
-  const timestamp = Math.floor(Number(data.kline.t) / 1000)
-  const date = new Date(timestamp * 1000)
-  console.log(`接收到新的K线数据 [${data.period}]:`, {
-    时间: date.toLocaleString('zh-CN'),
-    开盘价: data.kline.o,
-    最高价: data.kline.h,
-    最低价: data.kline.l,
-    收盘价: data.kline.c,
-    成交量: data.kline.v,
-    是否完成: data.kline.x ? '是' : '否'
-  })
+  // 移除所有日志输出
 }
 
 const updateMACD = (data: CandlestickData[]) => {
@@ -517,51 +490,47 @@ const updateMACD = (data: CandlestickData[]) => {
     const closePrices = data.map(d => d.close)
     
     // 计算MACD
-    const macdData = Indicators.calculateMACD(closePrices)
+    const macdResult = Indicators.calculateMACD(closePrices)
     
-    // 检测背离
-    const divergences = Indicators.detectDivergence(
-      closePrices,
-      macdData,
-      20 // 回看周期
-    )
-
     // 更新MACD数据
-    const macdSeriesData = macdData.map((d, i) => ({
+    const macdSeriesData = macdResult.map((d, i) => ({
       time: data[i].time,
       value: d.macd
     }))
     
-    const signalSeriesData = macdData.map((d, i) => ({
+    const signalSeriesData = macdResult.map((d, i) => ({
       time: data[i].time,
       value: d.signal
     }))
     
-    const histogramSeriesData = macdData.map((d, i) => ({
+    const histogramSeriesData = macdResult.map((d, i) => ({
       time: data[i].time,
       value: d.histogram,
       color: d.histogram >= 0 ? '#26a69a' : '#ef5350'
     }))
-
-    // 清除旧数据
-    macdSeries.setData([])
-    signalSeries.setData([])
-    histogramSeries.setData([])
 
     // 设置新数据
     macdSeries.setData(macdSeriesData)
     signalSeries.setData(signalSeriesData)
     histogramSeries.setData(histogramSeriesData)
 
+    // 检测背离
+    const divergences = Indicators.detectDivergence(
+      closePrices,
+      macdResult,
+      20 // 回看周期
+    )
+
     // 标记背离
-    if (bullishMarkers && bearishMarkers) {
+    if (bullishMarkers && bearishMarkers && divergences) {
       // 看涨背离标记
       const bullishMarkerData = divergences.bullish.map(i => ({
         time: data[i].time,
         position: 'belowBar' as const,
         color: '#26a69a',
         shape: 'arrowUp' as const,
-        text: '看涨背离'
+        text: '底背离',
+        size: 3  // 增大标记大小
       }))
 
       // 看跌背离标记
@@ -570,9 +539,15 @@ const updateMACD = (data: CandlestickData[]) => {
         position: 'aboveBar' as const,
         color: '#ef5350',
         shape: 'arrowDown' as const,
-        text: '看跌背离'
+        text: '顶背离',
+        size: 3  // 增大标记大小
       }))
 
+      // 清除旧的标记
+      bullishMarkers.setMarkers([])
+      bearishMarkers.setMarkers([])
+      
+      // 设置新的标记
       bullishMarkers.setMarkers(bullishMarkerData)
       bearishMarkers.setMarkers(bearishMarkerData)
     }
@@ -611,6 +586,11 @@ onBeforeUnmount(() => {
 
 <style lang="scss" scoped>
 .custom-trading-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
   .card-header {
     h3 {
       margin: 0;
@@ -621,11 +601,14 @@ onBeforeUnmount(() => {
   .chart-container {
     margin: 1rem 0;
     height: 600px;
-    background: #1a1a1a;
+    min-height: 600px;
+    background: #ffffff;
     border-radius: 4px;
+    overflow-y: auto;
     
     #chart {
       height: 100%;
+      min-height: 600px;
     }
   }
   
