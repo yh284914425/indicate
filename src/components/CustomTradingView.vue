@@ -66,6 +66,51 @@ dayjs.tz.setDefault(dayjs.tz.guess())
 // 设置 dayjs 语言为中文
 dayjs.locale('zh-cn')
 
+// 添加图表配置
+const chartConfig = {
+  candlestick: {
+    upColor: '#26a69a',
+    downColor: '#ef5350',
+    borderVisible: false,
+    wickUpColor: '#26a69a',
+    wickDownColor: '#ef5350',
+    priceFormat: {
+      type: 'price',
+      precision: 2,
+      minMove: 0.01,
+    }
+  },
+  volume: {
+    upColor: '#26a69a',
+    downColor: '#ef5350',
+    scaleMargins: {
+      top: 0.5,
+      bottom: 0.3,
+    }
+  },
+  macd: {
+    colors: {
+      macdLine: '#2196F3',
+      signalLine: '#FF9800',
+      histogram: {
+        positive: '#26a69a',
+        negative: '#ef5350'
+      }
+    },
+    scaleMargins: {
+      top: 0.7,
+      bottom: 0,
+    }
+  },
+  grid: {
+    color: '#f0f0f0'
+  },
+  crosshair: {
+    color: '#C4C4C4',
+    labelBackgroundColor: '#f0f0f0'
+  }
+}
+
 const chartContainerRef = ref<HTMLElement | null>(null)
 const selectedInterval = ref<Period>('1m')
 const indicators = ref(['MA', 'Volume'])
@@ -102,6 +147,28 @@ const isLoading = ref(false)
 const currentPage = ref(1)
 const pageSize = 500
 
+// 添加防抖函数
+const debounce = (fn: Function, delay: number) => {
+  let timer: number | null = null
+  return (...args: any[]) => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      fn.apply(null, args)
+    }, delay) as unknown as number
+  }
+}
+
+// 添加数据缓存
+const chartDataCache = ref<{
+  candles: CandlestickData[],
+  volumes: HistogramData[],
+  macd: MACD[]
+}>({
+  candles: [],
+  volumes: [],
+  macd: []
+})
+
 const initChart = () => {
   const container = document.getElementById('chart')
   if (!container) return
@@ -116,19 +183,19 @@ const initChart = () => {
       fontSize: 12,
     },
     grid: {
-      vertLines: { color: '#f0f0f0' },
-      horzLines: { color: '#f0f0f0' },
+      vertLines: { color: chartConfig.grid.color },
+      horzLines: { color: chartConfig.grid.color },
     },
     crosshair: {
       mode: CrosshairMode.Normal,
       vertLine: {
-        labelBackgroundColor: '#f0f0f0',
-        color: '#C4C4C4',
+        labelBackgroundColor: chartConfig.crosshair.labelBackgroundColor,
+        color: chartConfig.crosshair.color,
         labelVisible: true,
       },
       horzLine: {
-        labelBackgroundColor: '#f0f0f0',
-        color: '#C4C4C4',
+        labelBackgroundColor: chartConfig.crosshair.labelBackgroundColor,
+        color: chartConfig.crosshair.color,
       }
     },
     rightPriceScale: {
@@ -171,22 +238,11 @@ const initChart = () => {
   })
 
   // 添加K线图
-  candlestickSeries = chart.addCandlestickSeries({
-    upColor: '#26a69a',
-    downColor: '#ef5350',
-    borderVisible: false,
-    wickUpColor: '#26a69a',
-    wickDownColor: '#ef5350',
-    priceFormat: {
-      type: 'price',
-      precision: 2,
-      minMove: 0.01,
-    }
-  })
+  candlestickSeries = chart.addCandlestickSeries(chartConfig.candlestick)
 
   // 添加成交量
   volumeSeries = chart.addHistogramSeries({
-    color: '#26a69a',
+    color: chartConfig.volume.upColor,
     priceFormat: {
       type: 'volume',
       precision: 3,
@@ -196,40 +252,34 @@ const initChart = () => {
 
   // 设置成交量的显示区域
   chart.priceScale('volume').applyOptions({
-    scaleMargins: {
-      top: 0.5,
-      bottom: 0.3,
-    },
+    scaleMargins: chartConfig.volume.scaleMargins,
     visible: true,
   })
 
   // 添加MACD指标
   macdSeries = chart.addLineSeries({
-    color: '#2196F3',
+    color: chartConfig.macd.colors.macdLine,
     lineWidth: 2,
     priceScaleId: 'macd',
     title: 'MACD',
   })
 
   signalSeries = chart.addLineSeries({
-    color: '#FF9800',
+    color: chartConfig.macd.colors.signalLine,
     lineWidth: 2,
     priceScaleId: 'macd',
     title: 'Signal',
   })
 
   histogramSeries = chart.addHistogramSeries({
-    color: '#26a69a',
+    color: chartConfig.macd.colors.histogram.positive,
     priceScaleId: 'macd',
     title: 'Histogram',
   })
 
   // 设置MACD的显示区域
   chart.priceScale('macd').applyOptions({
-    scaleMargins: {
-      top: 0.7,
-      bottom: 0,
-    },
+    scaleMargins: chartConfig.macd.scaleMargins,
     visible: true
   })
 
@@ -272,13 +322,13 @@ const initChart = () => {
   })
 
   // 处理窗口大小变化
-  const handleResize = () => {
-    if (chart && container) {
+  const handleResize = debounce(() => {
+    if (chart && chartContainerRef.value) {
       chart.applyOptions({
-        width: container.clientWidth,
+        width: chartContainerRef.value.clientWidth,
       })
     }
-  }
+  }, 200)
 
   window.addEventListener('resize', handleResize)
 
@@ -312,78 +362,178 @@ const updateChart = (data: any) => {
     const volumeData: HistogramData = {
       time: timestamp as Time,
       value: parseFloat(data.kline.v),
-      color: parseFloat(data.kline.c) >= parseFloat(data.kline.o) ? '#26a69a' : '#ef5350'
+      color: parseFloat(data.kline.c) >= parseFloat(data.kline.o) ? 
+        chartConfig.candlestick.upColor : 
+        chartConfig.candlestick.downColor
     }
 
     if (data.kline.x) {
+      // 使用缓存更新数据
+      const existingCandleIndex = chartDataCache.value.candles.findIndex(d => d.time === timestamp)
+      
+      if (existingCandleIndex !== -1) {
+        chartDataCache.value.candles[existingCandleIndex] = candleData
+        chartDataCache.value.volumes[existingCandleIndex] = volumeData
+      } else {
+        chartDataCache.value.candles.push(candleData)
+        chartDataCache.value.volumes.push(volumeData)
+      }
+
+      // 批量更新图表
+      debouncedUpdateChartData()
+    } else {
+      // 实时更新最新的K线
       candlestickSeries.update(candleData)
       volumeSeries.update(volumeData)
-      
-      // 获取所有K线数据并更新MACD
-      const allData = candlestickSeries.data() as CandlestickData[]
-      updateMACD([...allData, candleData])
-    } else {
-      candlestickSeries.update(candleData)
     }
   } catch (error) {
     console.error('更新图表数据失败:', error)
   }
 }
 
-// 加载更多历史数据
-const loadMoreHistoricalData = async () => {
-  if (isLoading.value || !candlestickSeries || !volumeSeries) return
+// 批量更新图表数据的防抖函数
+const debouncedUpdateChartData = debounce(() => {
+  if (!chartDataCache.value.candles.length) return
+
+  const sortedCandles = [...chartDataCache.value.candles].sort((a, b) => 
+    Number(a.time) - Number(b.time)
+  )
+  const sortedVolumes = [...chartDataCache.value.volumes].sort((a, b) => 
+    Number(a.time) - Number(b.time)
+  )
+
+  candlestickSeries?.setData(sortedCandles)
+  volumeSeries?.setData(sortedVolumes)
+  updateMACD(sortedCandles)
+}, 100)
+
+// 优化MACD更新函数
+const updateMACD = (data: CandlestickData[]) => {
+  if (!macdSeries || !signalSeries || !histogramSeries || !data.length) return
 
   try {
-    isLoading.value = true
-    currentPage.value++
+    const closePrices = data.map(d => d.close)
+    const macdResult = Indicators.calculateMACD(closePrices)
+    
+    if (!macdResult.length) return
 
-    const klines = await historyService.getKlines(
-      'BTCUSDT', 
+    // 缓存MACD数据
+    chartDataCache.value.macd = macdResult
+
+    // 批量更新MACD数据
+    const macdData = macdResult.map((d, i) => ({
+      time: data[i].time,
+      value: d.macd,
+      signal: d.signal,
+      histogram: d.histogram
+    }))
+
+    // 使用requestAnimationFrame优化渲染
+    requestAnimationFrame(() => {
+      macdSeries?.setData(macdData.map(d => ({
+        time: d.time,
+        value: d.value
+      })))
+
+      signalSeries?.setData(macdData.map(d => ({
+        time: d.time,
+        value: d.signal
+      })))
+
+      histogramSeries?.setData(macdData.map(d => ({
+        time: d.time,
+        value: d.histogram,
+        color: d.histogram >= 0 ? 
+          chartConfig.macd.colors.histogram.positive : 
+          chartConfig.macd.colors.histogram.negative
+      })))
+
+      updateDivergenceMarkers(data, macdResult)
+    })
+  } catch (error) {
+    console.error('更新MACD失败:', error)
+  }
+}
+
+// 分离背离标记更新逻辑
+const updateDivergenceMarkers = (data: CandlestickData[], macdResult: MACD[]) => {
+  if (!bullishMarkers || !bearishMarkers) return
+
+  try {
+    const divergences = Indicators.detectDivergence(
+      data.map(d => d.close),
+      macdResult,
+      20
+    )
+
+    if (!divergences) return
+
+    requestAnimationFrame(() => {
+      if (bullishMarkers && bearishMarkers) {  // 添加空检查
+        bullishMarkers.setMarkers(divergences.bullish.map(i => ({
+          time: data[i].time,
+          position: 'belowBar' as const,
+          color: chartConfig.macd.colors.histogram.positive,
+          shape: 'arrowUp' as const,
+          text: '底背离',
+          size: 3
+        })))
+
+        bearishMarkers.setMarkers(divergences.bearish.map(i => ({
+          time: data[i].time,
+          position: 'aboveBar' as const,
+          color: chartConfig.macd.colors.histogram.negative,
+          shape: 'arrowDown' as const,
+          text: '顶背离',
+          size: 3
+        })))
+      }
+    })
+  } catch (error) {
+    console.error('更新背离标记失败:', error)
+  }
+}
+
+// 优化历史数据加载
+const loadMoreHistoricalData = async () => {
+  if (isLoading.value) return
+  
+  try {
+    isLoading.value = true
+    const newData = await historyService.getKlines(
+      'BTCUSDT',
       selectedInterval.value,
       pageSize,
-      currentPage.value
+      ++currentPage.value
     )
-    
-    if (klines.length === 0) return
 
-    // 转换K线数据
-    const candleData = klines.map(k => ({
+    if (!newData.length) return
+
+    // 使用缓存更新数据
+    const candleData = newData.map(k => ({
       time: Math.floor(k.time) as Time,
       open: k.open,
       high: k.high,
       low: k.low,
       close: k.close
-    })) as CandlestickData<Time>[]  // 添加类型断言
-    
-    // 转换成交量数据
-    const volumeData = klines.map(k => ({
-      time: Math.floor(k.time) as Time,
-      value: k.volume,
-      color: k.close >= k.open ? '#26a69a' : '#ef5350'
     }))
 
-    // 获取现有数据
-    const existingData = candlestickSeries.data() as CandlestickData<Time>[]
-    const existingVolume = volumeSeries.data()
+    const volumeData = newData.map(k => ({
+      time: Math.floor(k.time) as Time,
+      value: k.volume,
+      color: k.close >= k.open ? 
+        chartConfig.candlestick.upColor : 
+        chartConfig.candlestick.downColor
+    }))
 
-    // 合并并排序数据
-    const newCandleData = [...candleData, ...existingData].sort((a, b) => 
-      Number(a.time) - Number(b.time)
-    )
-    const newVolumeData = [...volumeData, ...existingVolume].sort((a, b) => 
-      Number(a.time) - Number(b.time)
-    )
+    chartDataCache.value.candles = [...candleData, ...chartDataCache.value.candles]
+    chartDataCache.value.volumes = [...volumeData, ...chartDataCache.value.volumes]
 
-    // 更新数据
-    candlestickSeries.setData(newCandleData)
-    volumeSeries.setData(newVolumeData)
-    
-    // 更新MACD和背离
-    updateMACD(newCandleData)
-
+    // 批量更新图表
+    debouncedUpdateChartData()
   } catch (error) {
-    console.error('加载更多历史数据失败:', error)
+    console.error('加载历史数据失败:', error)
+    currentPage.value--
   } finally {
     isLoading.value = false
   }
@@ -416,8 +566,17 @@ const loadHistoricalData = async () => {
     const volumeData = klines.map(k => ({
       time: Math.floor(k.time) as Time,
       value: k.volume,
-      color: k.close >= k.open ? '#26a69a' : '#ef5350'
+      color: k.close >= k.open ? 
+        chartConfig.volume.upColor : 
+        chartConfig.volume.downColor
     }))
+
+    // 清除缓存数据
+    chartDataCache.value = {
+      candles: candleData,
+      volumes: volumeData,
+      macd: []
+    }
 
     // 设置新数据
     candlestickSeries.setData(candleData)
@@ -480,80 +639,6 @@ const changeInterval = async () => {
 
 const logKlineData = (data: any) => {
   // 移除所有日志输出
-}
-
-const updateMACD = (data: CandlestickData[]) => {
-  if (!macdSeries || !signalSeries || !histogramSeries) return
-
-  try {
-    // 提取收盘价
-    const closePrices = data.map(d => d.close)
-    
-    // 计算MACD
-    const macdResult = Indicators.calculateMACD(closePrices)
-    
-    // 更新MACD数据
-    const macdSeriesData = macdResult.map((d, i) => ({
-      time: data[i].time,
-      value: d.macd
-    }))
-    
-    const signalSeriesData = macdResult.map((d, i) => ({
-      time: data[i].time,
-      value: d.signal
-    }))
-    
-    const histogramSeriesData = macdResult.map((d, i) => ({
-      time: data[i].time,
-      value: d.histogram,
-      color: d.histogram >= 0 ? '#26a69a' : '#ef5350'
-    }))
-
-    // 设置新数据
-    macdSeries.setData(macdSeriesData)
-    signalSeries.setData(signalSeriesData)
-    histogramSeries.setData(histogramSeriesData)
-
-    // 检测背离
-    const divergences = Indicators.detectDivergence(
-      closePrices,
-      macdResult,
-      20 // 回看周期
-    )
-
-    // 标记背离
-    if (bullishMarkers && bearishMarkers && divergences) {
-      // 看涨背离标记
-      const bullishMarkerData = divergences.bullish.map(i => ({
-        time: data[i].time,
-        position: 'belowBar' as const,
-        color: '#26a69a',
-        shape: 'arrowUp' as const,
-        text: '底背离',
-        size: 3  // 增大标记大小
-      }))
-
-      // 看跌背离标记
-      const bearishMarkerData = divergences.bearish.map(i => ({
-        time: data[i].time,
-        position: 'aboveBar' as const,
-        color: '#ef5350',
-        shape: 'arrowDown' as const,
-        text: '顶背离',
-        size: 3  // 增大标记大小
-      }))
-
-      // 清除旧的标记
-      bullishMarkers.setMarkers([])
-      bearishMarkers.setMarkers([])
-      
-      // 设置新的标记
-      bullishMarkers.setMarkers(bullishMarkerData)
-      bearishMarkers.setMarkers(bearishMarkerData)
-    }
-  } catch (error) {
-    console.error('更新MACD失败:', error)
-  }
 }
 
 onMounted(async () => {

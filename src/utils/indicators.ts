@@ -24,6 +24,10 @@ export class Indicators {
     slowPeriod: number = 26, 
     signalPeriod: number = 9
   ): MACD[] {
+    if (!closePrices || closePrices.length === 0) {
+      return []
+    }
+
     // 计算快线和慢线的EMA
     const fastEMA = this.calculateEMA(closePrices, fastPeriod)
     const slowEMA = this.calculateEMA(closePrices, slowPeriod)
@@ -47,13 +51,31 @@ export class Indicators {
     macdValues: MACD[], 
     lookbackPeriod: number = 20
   ): { bullish: number[], bearish: number[] } {
+    if (!prices || !macdValues || prices.length === 0 || macdValues.length === 0 || 
+        prices.length !== macdValues.length) {
+      return { bullish: [], bearish: [] }
+    }
+
     const bullishDivergences: number[] = []
     const bearishDivergences: number[] = []
 
-    for (let i = lookbackPeriod; i < prices.length; i++) {
+    // 确保我们有足够的数据来检查前后的点
+    for (let i = lookbackPeriod; i < prices.length - 1; i++) {
+      // 检查数组边界
+      if (i - 1 < 0 || i + 1 >= prices.length || 
+          i - 1 < 0 || i + 1 >= macdValues.length) {
+        continue
+      }
+
       // 寻找局部低点和高点
       const isLocalPriceBottom = prices[i] < prices[i - 1] && prices[i] < prices[i + 1]
       const isLocalPriceTop = prices[i] > prices[i - 1] && prices[i] > prices[i + 1]
+      
+      // 确保 macdValues[i] 存在且有 histogram 属性
+      if (!macdValues[i] || !macdValues[i - 1] || !macdValues[i + 1]) {
+        continue
+      }
+
       const isLocalMacdBottom = macdValues[i].histogram < macdValues[i - 1].histogram && 
                                macdValues[i].histogram < macdValues[i + 1].histogram
       const isLocalMacdTop = macdValues[i].histogram > macdValues[i - 1].histogram && 
@@ -94,8 +116,14 @@ export class Indicators {
     lookback: number
   ): number[] {
     const bottoms: number[] = []
-    for (let i = currentIndex - lookback; i < currentIndex; i++) {
-      if (i <= 0) continue
+    const startIndex = Math.max(1, currentIndex - lookback)
+    
+    for (let i = startIndex; i < currentIndex; i++) {
+      if (i + 1 >= prices.length) continue
+      
+      // 确保所有需要的数据点都存在
+      if (!macdValues[i] || !macdValues[i - 1] || !macdValues[i + 1]) continue
+
       if (prices[i] < prices[i - 1] && prices[i] < prices[i + 1] &&
           macdValues[i].histogram < macdValues[i - 1].histogram && 
           macdValues[i].histogram < macdValues[i + 1].histogram) {
@@ -112,8 +140,14 @@ export class Indicators {
     lookback: number
   ): number[] {
     const tops: number[] = []
-    for (let i = currentIndex - lookback; i < currentIndex; i++) {
-      if (i <= 0) continue
+    const startIndex = Math.max(1, currentIndex - lookback)
+    
+    for (let i = startIndex; i < currentIndex; i++) {
+      if (i + 1 >= prices.length) continue
+      
+      // 确保所有需要的数据点都存在
+      if (!macdValues[i] || !macdValues[i - 1] || !macdValues[i + 1]) continue
+
       if (prices[i] > prices[i - 1] && prices[i] > prices[i + 1] &&
           macdValues[i].histogram > macdValues[i - 1].histogram && 
           macdValues[i].histogram > macdValues[i + 1].histogram) {
