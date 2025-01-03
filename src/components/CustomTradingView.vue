@@ -55,6 +55,7 @@ import 'dayjs/locale/zh-cn'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
 import { Indicators } from '@/utils/indicators'
+import type { MACD } from '@/utils/indicators'
 
 // 配置 dayjs 插件
 dayjs.extend(utc)
@@ -75,7 +76,7 @@ const chartConfig = {
     wickUpColor: '#26a69a',
     wickDownColor: '#ef5350',
     priceFormat: {
-      type: 'price',
+      type: 'price' as const,
       precision: 2,
       minMove: 0.01,
     }
@@ -168,6 +169,33 @@ const chartDataCache = ref<{
   volumes: [],
   macd: []
 })
+
+// 添加时间戳排序和验证函数
+const validateAndSortData = <T extends { time: Time }>(data: T[]): T[] => {
+  // 按时间升序排序
+  const sortedData = [...data].sort((a, b) => {
+    const timeA = typeof a.time === 'number' ? a.time : Number(a.time)
+    const timeB = typeof b.time === 'number' ? b.time : Number(b.time)
+    return timeA - timeB
+  })
+
+  // 验证时间戳是否严格升序
+  for (let i = 1; i < sortedData.length; i++) {
+    const prevTime = typeof sortedData[i - 1].time === 'number' ? 
+      sortedData[i - 1].time : Number(sortedData[i - 1].time)
+    const currTime = typeof sortedData[i].time === 'number' ? 
+      sortedData[i].time : Number(sortedData[i].time)
+    
+    if (currTime <= prevTime) {
+      console.warn(`检测到重复或逆序时间戳: prev=${prevTime}, curr=${currTime}, index=${i}`)
+      // 移除重复或逆序的数据点
+      sortedData.splice(i, 1)
+      i--
+    }
+  }
+
+  return sortedData
+}
 
 const initChart = () => {
   const container = document.getElementById('chart')
@@ -283,21 +311,23 @@ const initChart = () => {
     visible: true
   })
 
-  // 添加背离标记
+  // 修改背离标记的初始化
   bullishMarkers = chart.addLineSeries({
     lastValueVisible: false,
     priceLineVisible: false,
     crosshairMarkerVisible: false,
-    lineVisible: false,  // 使用lineVisible替代lineWidth
-    priceScaleId: 'macd'
+    lineVisible: false,
+    priceScaleId: 'right',
+    title: '底背离'
   })
 
   bearishMarkers = chart.addLineSeries({
     lastValueVisible: false,
     priceLineVisible: false,
     crosshairMarkerVisible: false,
-    lineVisible: false,  // 使用lineVisible替代lineWidth
-    priceScaleId: 'macd'
+    lineVisible: false,
+    priceScaleId: 'right',
+    title: '顶背离'
   })
 
   // 设置工具提示
@@ -368,23 +398,38 @@ const updateChart = (data: any) => {
     }
 
     if (data.kline.x) {
-      // 使用缓存更新数据
-      const existingCandleIndex = chartDataCache.value.candles.findIndex(d => d.time === timestamp)
-      
-      if (existingCandleIndex !== -1) {
-        chartDataCache.value.candles[existingCandleIndex] = candleData
-        chartDataCache.value.volumes[existingCandleIndex] = volumeData
+      // 更新或添加新数据
+      const existingIndex = chartDataCache.value.candles.findIndex(d => 
+        Number(d.time) === timestamp
+      )
+
+      if (existingIndex !== -1) {
+        // 更新现有数据
+        chartDataCache.value.candles[existingIndex] = candleData
+        chartDataCache.value.volumes[existingIndex] = volumeData
       } else {
+        // 添加新数据
         chartDataCache.value.candles.push(candleData)
         chartDataCache.value.volumes.push(volumeData)
       }
 
-      // 批量更新图表
-      debouncedUpdateChartData()
+      // 按时间升序排序
+      const sortedCandles = chartDataCache.value.candles
+        .sort((a, b) => Number(a.time) - Number(b.time))
+      const sortedVolumes = chartDataCache.value.volumes
+        .sort((a, b) => Number(a.time) - Number(b.time))
+
+      // 更新图表
+      candlestickSeries.setData(sortedCandles)
+      volumeSeries.setData(sortedVolumes)
+      updateMACD(sortedCandles)
     } else {
       // 实时更新最新的K线
-      candlestickSeries.update(candleData)
-      volumeSeries.update(volumeData)
+      const lastCandle = chartDataCache.value.candles[chartDataCache.value.candles.length - 1]
+      if (!lastCandle || Number(candleData.time) >= Number(lastCandle.time)) {
+        candlestickSeries.update(candleData)
+        volumeSeries.update(volumeData)
+      }
     }
   } catch (error) {
     console.error('更新图表数据失败:', error)
@@ -412,11 +457,18 @@ const updateMACD = (data: CandlestickData[]) => {
   if (!macdSeries || !signalSeries || !histogramSeries || !data.length) return
 
   try {
+    console.log('开始更新MACD...')
+    console.log('K线数据长度:', data.length)
+    
     const closePrices = data.map(d => d.close)
     const macdResult = Indicators.calculateMACD(closePrices)
     
-    if (!macdResult.length) return
+    if (!macdResult.length) {
+      console.log('MACD计算结果为空')
+      return
+    }
 
+    console.log('MACD计算完成，长度:', macdResult.length)
     // 缓存MACD数据
     chartDataCache.value.macd = macdResult
 
@@ -430,6 +482,7 @@ const updateMACD = (data: CandlestickData[]) => {
 
     // 使用requestAnimationFrame优化渲染
     requestAnimationFrame(() => {
+      console.log('开始更新MACD图表...')
       macdSeries?.setData(macdData.map(d => ({
         time: d.time,
         value: d.value
@@ -455,42 +508,81 @@ const updateMACD = (data: CandlestickData[]) => {
   }
 }
 
-// 分离背离标记更新逻辑
+// 修改背离标记更新逻辑
 const updateDivergenceMarkers = (data: CandlestickData[], macdResult: MACD[]) => {
   if (!bullishMarkers || !bearishMarkers) return
 
   try {
+    console.log('开始检测背离...')
+    console.log('数据长度:', data.length, 'MACD长度:', macdResult.length)
+
     const divergences = Indicators.detectDivergence(
       data.map(d => d.close),
       macdResult,
       20
     )
 
+    console.log('检测到的背离:', divergences)
     if (!divergences) return
 
+    console.log('底背离数量:', divergences.bullish.length)
+    console.log('顶背离数量:', divergences.bearish.length)
+
+    if (divergences.bullish.length > 0) {
+      console.log('底背离位置:', divergences.bullish.map(i => ({
+        time: formatChartTime(Number(data[i].time)),
+        price: data[i].close
+      })))
+    }
+
+    if (divergences.bearish.length > 0) {
+      console.log('顶背离位置:', divergences.bearish.map(i => ({
+        time: formatChartTime(Number(data[i].time)),
+        price: data[i].high
+      })))
+    }
+
     requestAnimationFrame(() => {
-      if (bullishMarkers && bearishMarkers) {  // 添加空检查
-        bullishMarkers.setMarkers(divergences.bullish.map(i => ({
+      if (bullishMarkers && bearishMarkers && candlestickSeries) {
+        // 创建底背离标记
+        const bullishMarkerData = divergences.bullish.map(i => ({
           time: data[i].time,
           position: 'belowBar' as const,
           color: chartConfig.macd.colors.histogram.positive,
           shape: 'arrowUp' as const,
           text: '底背离',
-          size: 3
-        })))
+          size: 2
+        }))
 
-        bearishMarkers.setMarkers(divergences.bearish.map(i => ({
+        // 创建顶背离标记
+        const bearishMarkerData = divergences.bearish.map(i => ({
           time: data[i].time,
           position: 'aboveBar' as const,
           color: chartConfig.macd.colors.histogram.negative,
           shape: 'arrowDown' as const,
           text: '顶背离',
-          size: 3
-        })))
+          size: 2
+        }))
+
+        console.log('设置底背离标记:', bullishMarkerData)
+        console.log('设置顶背离标记:', bearishMarkerData)
+
+        // 设置标记
+        if (bullishMarkerData.length > 0) {
+          candlestickSeries.setMarkers(bullishMarkerData)
+        }
+        if (bearishMarkerData.length > 0) {
+          candlestickSeries.setMarkers([...bullishMarkerData, ...bearishMarkerData])
+        }
       }
     })
   } catch (error) {
     console.error('更新背离标记失败:', error)
+    console.error('错误详情:', {
+      dataLength: data?.length,
+      macdResultLength: macdResult?.length,
+      error: error instanceof Error ? error.message : String(error)
+    })
   }
 }
 
@@ -509,8 +601,8 @@ const loadMoreHistoricalData = async () => {
 
     if (!newData.length) return
 
-    // 使用缓存更新数据
-    const candleData = newData.map(k => ({
+    // 转换新数据
+    const newCandleData = newData.map(k => ({
       time: Math.floor(k.time) as Time,
       open: k.open,
       high: k.high,
@@ -518,7 +610,7 @@ const loadMoreHistoricalData = async () => {
       close: k.close
     }))
 
-    const volumeData = newData.map(k => ({
+    const newVolumeData = newData.map(k => ({
       time: Math.floor(k.time) as Time,
       value: k.volume,
       color: k.close >= k.open ? 
@@ -526,11 +618,21 @@ const loadMoreHistoricalData = async () => {
         chartConfig.candlestick.downColor
     }))
 
-    chartDataCache.value.candles = [...candleData, ...chartDataCache.value.candles]
-    chartDataCache.value.volumes = [...volumeData, ...chartDataCache.value.volumes]
+    // 合并数据并按时间升序排序
+    const allCandleData = [...chartDataCache.value.candles, ...newCandleData]
+      .sort((a, b) => Number(a.time) - Number(b.time))
+    
+    const allVolumeData = [...chartDataCache.value.volumes, ...newVolumeData]
+      .sort((a, b) => Number(a.time) - Number(b.time))
 
-    // 批量更新图表
-    debouncedUpdateChartData()
+    // 更新缓存
+    chartDataCache.value.candles = allCandleData
+    chartDataCache.value.volumes = allVolumeData
+
+    // 更新图表
+    candlestickSeries?.setData(allCandleData)
+    volumeSeries?.setData(allVolumeData)
+    updateMACD(allCandleData)
   } catch (error) {
     console.error('加载历史数据失败:', error)
     currentPage.value--
@@ -553,7 +655,7 @@ const loadHistoricalData = async () => {
       currentPage.value
     )
     
-    // 设置历史K线数据
+    // 转换数据
     const candleData = klines.map(k => ({
       time: Math.floor(k.time) as Time,
       open: k.open,
@@ -562,7 +664,6 @@ const loadHistoricalData = async () => {
       close: k.close
     }))
     
-    // 设置历史成交量数据
     const volumeData = klines.map(k => ({
       time: Math.floor(k.time) as Time,
       value: k.volume,
@@ -573,17 +674,23 @@ const loadHistoricalData = async () => {
 
     // 清除缓存数据
     chartDataCache.value = {
-      candles: candleData,
-      volumes: volumeData,
+      candles: [],
+      volumes: [],
       macd: []
     }
 
-    // 设置新数据
-    candlestickSeries.setData(candleData)
-    volumeSeries.setData(volumeData)
+    // 设置新数据（确保按时间升序）
+    const sortedCandleData = candleData.sort((a, b) => Number(a.time) - Number(b.time))
+    const sortedVolumeData = volumeData.sort((a, b) => Number(a.time) - Number(b.time))
 
-    // 更新MACD
-    updateMACD(candleData)
+    // 更新缓存
+    chartDataCache.value.candles = sortedCandleData
+    chartDataCache.value.volumes = sortedVolumeData
+
+    // 设置图表数据
+    candlestickSeries.setData(sortedCandleData)
+    volumeSeries.setData(sortedVolumeData)
+    updateMACD(sortedCandleData)
 
     // 调整视图以显示所有数据
     chart?.timeScale().fitContent()
