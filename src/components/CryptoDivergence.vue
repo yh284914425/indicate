@@ -215,7 +215,7 @@ const fetchData = async () => {
       selectedLimit.value
     );
     
-    const { topDivergence, bottomDivergence, j } = cryptoService.calculateIndicators(klines);
+    const { topDivergence, bottomDivergence, j } = cryptoService.calculateIndicators_KDJ(klines);
 
     const newSignals = [];
     for (let i = 0; i < klines.length; i++) {

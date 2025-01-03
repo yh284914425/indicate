@@ -155,7 +155,7 @@ export class MultiSymbolService {
               return;
             }
 
-            const result = this.cryptoService.calculateIndicators(klines);
+            const result = this.cryptoService.calculateIndicators_KDJ(klines);
             
             for (let i = 0; i < klines.length; i++) {
               const klineTime = new Date(klines[i].openTime);

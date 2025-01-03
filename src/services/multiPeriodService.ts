@@ -80,7 +80,7 @@ export class MultiPeriodService {
         }
 
         const klines = await this.cryptoService.getKlines(symbol, period, limit)
-        const { topDivergence, bottomDivergence } = this.cryptoService.calculateIndicators(klines)
+        const { topDivergence, bottomDivergence } = this.cryptoService.calculateIndicators_KDJ(klines)
         
         // 检查指定天数内的背离
         const recentKlines = klines.filter(k => new Date(k.openTime) >= startDate)

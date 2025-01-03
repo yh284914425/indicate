@@ -180,7 +180,7 @@ export class CryptoService {
   }
 
   // 计算技术指标
-  calculateIndicators(klines: KlineData[]): {
+  calculateIndicators_KDJ(klines: KlineData[]): {
     j: number[],
     j1: number[],
     topDivergence: boolean[],
@@ -420,7 +420,7 @@ export class CryptoService {
     const result: any = {}
     Object.entries(periodMultipliers).forEach(([period, multiplier]) => {
       const klines = multiplier === 1 ? allKlines : this.mergeKlines(allKlines, multiplier)
-      const indicators = this.calculateIndicators(klines)
+      const indicators = this.calculateIndicators_KDJ(klines)
       result[period] = { klines, indicators }
     })
 
