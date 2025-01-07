@@ -187,16 +187,6 @@ export class CryptoService {
     bottomDivergence: boolean[]
   } {
     console.log(klines,"klines")
-    const results111 = this.calculateIndicators_SYH(klines, {
-      pivotPeriod: 5,         // 转折点周期
-      minDivergence: 1,       // 最小背离数量
-      checkCutThrough: false, // 是否检查切线
-      scaleFactor: 1.0,      // 背离柱状图缩放因子
-      showBullishDiv: true,  // 显示底背离
-      showBearishDiv: true,  // 显示顶背离
-      showLabels: true       // 显示标签
-    });
-    console.log(results111,"results111")
     const high = klines.map(k => parseFloat(k.high));
     const low = klines.map(k => parseFloat(k.low));
     const close = klines.map(k => parseFloat(k.close));
