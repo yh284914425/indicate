@@ -179,7 +179,84 @@ export class CryptoService {
     return a1 <= b1 && a2 > b2;
   }
 
-
+  // 计算技术指标
+  calculateIndicators_KDJ(klines: KlineData[]): {
+    j: number[],
+    j1: number[],
+    topDivergence: boolean[],
+    bottomDivergence: boolean[]
+  } {
+    console.log(klines)
+    const high = klines.map(k => parseFloat(k.high));
+    const low = klines.map(k => parseFloat(k.low));
+    const close = klines.map(k => parseFloat(k.close));
+    
+    const llv = this.LLV(low, 34);
+    const hhv = this.HHV(high, 34);
+    const lowv = this.EMA(llv, 3);
+    const highv = this.EMA(hhv, 3);
+    
+    const rsv: number[] = [];
+    for (let i = 0; i < klines.length; i++) {
+      if (highv[i] === lowv[i]) {
+        rsv[i] = 50;
+      } else {
+        rsv[i] = ((close[i] - lowv[i]) / (highv[i] - lowv[i])) * 100;
+      }
+    }
+    const rsvEma = this.EMA(rsv, 3);
+    
+    const k = this.SMA(rsvEma, 8, 1);
+    const d = this.SMA(k, 6, 1);
+    const j = k.map((v, i) => 3 * v - 2 * d[i]);
+    const j1 = this.MA(j, 3);
+    
+    const topDivergence: boolean[] = new Array(klines.length).fill(false);
+    const bottomDivergence: boolean[] = new Array(klines.length).fill(false);
+    
+    for (let i = 34; i < klines.length; i++) {
+      const jCrossUpJ1 = this.CROSS(j[i-1], j1[i-1], j[i], j1[i]);
+      const j1CrossUpJ = this.CROSS(j1[i-1], j[i-1], j1[i], j[i]);
+      
+      if (jCrossUpJ1) {
+        let lastCrossIndex = -1;
+        for (let k = i - 1; k >= 34; k--) {
+          if (this.CROSS(j[k-1], j1[k-1], j[k], j1[k])) {
+            lastCrossIndex = k;
+            break;
+          }
+        }
+        
+        if (lastCrossIndex !== -1) {
+          if (close[lastCrossIndex] > close[i] &&
+              j[i] > j[lastCrossIndex] &&
+              j[i] < 20) {
+            bottomDivergence[i] = true;
+          }
+        }
+      }
+      
+      if (j1CrossUpJ) {
+        let lastCrossIndex = -1;
+        for (let k = i - 1; k >= 34; k--) {
+          if (this.CROSS(j1[k-1], j[k-1], j1[k], j[k])) {
+            lastCrossIndex = k;
+            break;
+          }
+        }
+        
+        if (lastCrossIndex !== -1) {
+          if (close[lastCrossIndex] < close[i] &&
+              j1[lastCrossIndex] > j1[i] &&
+              j[i] > 90) {
+            topDivergence[i] = true;
+          }
+        }
+      }
+    }
+    
+    return { j, j1, topDivergence, bottomDivergence };
+  }
 
   async getSymbols(): Promise<string[]> {
     try {
@@ -693,271 +770,7 @@ export class CryptoService {
     return result;
   }
 
-  // 盛宜华背离综合指标计算
-  calculateIndicators_SYH(klines: KlineData[], options = {
-    pivotPeriod: 5,
-    minDivergence: 1,
-    checkCutThrough: false,
-    scaleFactor: 1.0,
-    showBullishDiv: true,
-    showBearishDiv: true,
-    showLabels: true
-  }): {
-    totalDivergence: number[];
-    regularBearishDiv: boolean[];
-    regularBullishDiv: boolean[];
-    macd1: number[];
-    macd2: number[];
-    macdBearishDiv: boolean[];  // 新增：MACD顶背离
-    macdBullishDiv: boolean[];  // 新增：MACD底背离
-    indicators: {
-      rsi: number[];
-      macd: number[];
-      signal: number[];
-      deltamacd: number[];
-      moment: number[];
-      cci: number[];
-      obv: number[];
-      stk: number[];
-      diosc: number[];
-      vwmacd: number[];
-      cmf: number[];
-      mfi: number[];
-    }
-  } {
-    const close = klines.map(k => parseFloat(k.close));
-    const high = klines.map(k => parseFloat(k.high));
-    const low = klines.map(k => parseFloat(k.low));
-    const volume = klines.map(k => parseFloat(k.volume));
 
-    // 计算所有基础指标
-    const rsi = this.calculateRSI(close, 14);
-    const macdResult = this.calculateMACD(close, 12, 26, 9);
-    const moment = this.calculateMomentum(close, 10);
-    const cci = this.calculateCCI(high, low, close, 10);
-    const obv = this.calculateOBV(close, volume);
-    const stk = this.MA(this.calculateStoch(close, high, low, 14), 3);
-    
-    // DI和DIOSC计算
-    const highChange = this.change(high);
-    const lowChange = this.change(low).map(x => -x);
-    const DI = highChange.map((h, i) => h - lowChange[i]);
-    const tr = this.calculateTR(high, low, close);
-    const trur = this.calculateRMA(tr, 14);
-    const diosc = trur.map((t, i) => t === 0 ? 0 : 100 * this.calculateRMA(DI, 14)[i] / t);
-
-    // VWMACD计算
-    const maFast = this.calculateVWMA(close, volume, 12);
-    const maSlow = this.calculateVWMA(close, volume, 26);
-    const vwmacd = maFast.map((f, i) => f - maSlow[i]);
-
-    // CMF计算
-    const cmfm = close.map((c, i) => {
-      const hl = high[i] - low[i];
-      return hl === 0 ? 0 : ((c - low[i]) - (high[i] - c)) / hl;
-    });
-    const cmfv = cmfm.map((m, i) => m * volume[i]);
-    const cmf = this.MA(cmfv, 21).map((c, i) => c / this.MA(volume, 21)[i]);
-
-    // MFI计算
-    const mfi = this.calculateMFI(close, high, low, volume, 14);
-
-    // 计算转折点
-    const pivotHighs = this.findPivotHigh(close, options.pivotPeriod, options.pivotPeriod);
-    const pivotLows = this.findPivotLow(close, options.pivotPeriod, options.pivotPeriod);
-
-    // 初始化结果数组
-    const divergenceResults: number[] = new Array(klines.length).fill(0);
-    const regularBearishDiv: boolean[] = new Array(klines.length).fill(false);
-    const regularBullishDiv: boolean[] = new Array(klines.length).fill(false);
-
-    // 计算背离
-    for (let i = options.pivotPeriod * 2; i < klines.length; i++) {
-      let totalDiv = 0;
-      
-      // 处理顶背离
-      if (!isNaN(pivotHighs[i])) {
-        let prevHighIndex = -1;
-        for (let j = i - 1; j >= options.pivotPeriod * 2; j--) {
-          if (!isNaN(pivotHighs[j])) {
-            prevHighIndex = j;
-            break;
-          }
-        }
-        
-        if (prevHighIndex !== -1) {
-          // 计算各指标的顶背离
-          if (close[i] > close[prevHighIndex]) {
-            if (rsi[i] < rsi[prevHighIndex]) totalDiv--;
-            if (macdResult.macd[i] < macdResult.macd[prevHighIndex]) totalDiv--;
-            if (macdResult.histogram[i] < macdResult.histogram[prevHighIndex]) totalDiv--;
-            if (moment[i] < moment[prevHighIndex]) totalDiv--;
-            if (cci[i] < cci[prevHighIndex]) totalDiv--;
-            if (obv[i] < obv[prevHighIndex]) totalDiv--;
-            if (stk[i] < stk[prevHighIndex]) totalDiv--;
-            if (diosc[i] < diosc[prevHighIndex]) totalDiv--;
-            if (vwmacd[i] < vwmacd[prevHighIndex]) totalDiv--;
-            if (cmf[i] < cmf[prevHighIndex]) totalDiv--;
-            if (mfi[i] < mfi[prevHighIndex]) totalDiv--;
-          }
-        }
-      }
-
-      // 处理底背离
-      if (!isNaN(pivotLows[i])) {
-        let prevLowIndex = -1;
-        for (let j = i - 1; j >= options.pivotPeriod * 2; j--) {
-          if (!isNaN(pivotLows[j])) {
-            prevLowIndex = j;
-            break;
-          }
-        }
-        
-        if (prevLowIndex !== -1) {
-          // 计算各指标的底背离
-          if (close[i] < close[prevLowIndex]) {
-            if (rsi[i] > rsi[prevLowIndex]) totalDiv++;
-            if (macdResult.macd[i] > macdResult.macd[prevLowIndex]) totalDiv++;
-            if (macdResult.histogram[i] > macdResult.histogram[prevLowIndex]) totalDiv++;
-            if (moment[i] > moment[prevLowIndex]) totalDiv++;
-            if (cci[i] > cci[prevLowIndex]) totalDiv++;
-            if (obv[i] > obv[prevLowIndex]) totalDiv++;
-            if (stk[i] > stk[prevLowIndex]) totalDiv++;
-            if (diosc[i] > diosc[prevLowIndex]) totalDiv++;
-            if (vwmacd[i] > vwmacd[prevLowIndex]) totalDiv++;
-            if (cmf[i] > cmf[prevLowIndex]) totalDiv++;
-            if (mfi[i] > mfi[prevLowIndex]) totalDiv++;
-          }
-        }
-      }
-
-      divergenceResults[i] = totalDiv;
-      regularBearishDiv[i] = totalDiv <= -options.minDivergence;
-      regularBullishDiv[i] = totalDiv >= options.minDivergence;
-    }
-
-    // 计算MACD分形
-    const fractalTop: boolean[] = new Array(klines.length).fill(false);
-    const fractalBot: boolean[] = new Array(klines.length).fill(false);
-    const macdBearishDiv: boolean[] = new Array(klines.length).fill(false);
-    const macdBullishDiv: boolean[] = new Array(klines.length).fill(false);
-
-    // 计算MACD (5,15)
-    const macd515 = this.calculateMACD(close, 5, 15, 9);
-
-    // 计算分形点
-    for (let i = 4; i < klines.length; i++) {
-      // f_fractalize函数的实现
-      const isTopFractal = macd515.macd[i-4] < macd515.macd[i-2] && 
-                          macd515.macd[i-3] < macd515.macd[i-2] && 
-                          macd515.macd[i-2] > macd515.macd[i-1] && 
-                          macd515.macd[i-2] > macd515.macd[i];
-
-      const isBotFractal = macd515.macd[i-4] > macd515.macd[i-2] && 
-                          macd515.macd[i-3] > macd515.macd[i-2] && 
-                          macd515.macd[i-2] < macd515.macd[i-1] && 
-                          macd515.macd[i-2] < macd515.macd[i];
-
-      // 标记分形点
-      if (isTopFractal) {
-        fractalTop[i-2] = true;
-      }
-      if (isBotFractal) {
-        fractalBot[i-2] = true;
-      }
-    }
-
-    // 计算背离
-    for (let i = 2; i < klines.length; i++) {
-      if (fractalTop[i]) {
-        // 获取前一个分形点的值
-        const prevHighMacd = this.valueWhen(fractalTop, macd515.macd, 1)[i];
-        const prevHighPrice = this.valueWhen(fractalTop, high, 1)[i];
-
-        // regular_bearish_div1 条件
-        if (!isNaN(prevHighMacd) && !isNaN(prevHighPrice)) {
-          if (high[i] > prevHighPrice && macd515.macd[i] < prevHighMacd) {
-            macdBearishDiv[i] = true;
-          }
-        }
-      }
-
-      if (fractalBot[i]) {
-        // 获取前一个分形点的值
-        const prevLowMacd = this.valueWhen(fractalBot, macd515.macd, 1)[i];
-        const prevLowPrice = this.valueWhen(fractalBot, low, 1)[i];
-
-        // regular_bullish_div1 条件
-        if (!isNaN(prevLowMacd) && !isNaN(prevLowPrice)) {
-          if (low[i] < prevLowPrice && macd515.macd[i] > prevLowMacd) {
-            macdBullishDiv[i] = true;
-          }
-        }
-      }
-    }
-
-    // 收集背离点
-    const bearishDivs: number[] = [];
-    const bullishDivs: number[] = [];
-    
-    for (let i = 0; i < klines.length; i++) {
-      if (macdBearishDiv[i]) {
-        bearishDivs.push(i);
-      }
-      if (macdBullishDiv[i]) {
-        bullishDivs.push(i);
-      }
-    }
-
-    // 输出背离点
-    if (bearishDivs.length > 0 || bullishDivs.length > 0) {
-      console.log('\nMACD背离检测结果:');
-      if (bearishDivs.length > 0) {
-        console.log('MACD顶背离列表:');
-        bearishDivs.forEach(idx => {
-          console.log({
-            时间: new Date(klines[idx].openTime).toLocaleString(),
-            价格: high[idx].toFixed(2),
-            MACD值: macd515.macd[idx].toFixed(4)
-          });
-        });
-      }
-      if (bullishDivs.length > 0) {
-        console.log('\nMACD底背离列表:');
-        bullishDivs.forEach(idx => {
-          console.log({
-            时间: new Date(klines[idx].openTime).toLocaleString(),
-            价格: low[idx].toFixed(2),
-            MACD值: macd515.macd[idx].toFixed(4)
-          });
-        });
-      }
-    }
-
-    return {
-      totalDivergence: divergenceResults,
-      regularBearishDiv,
-      regularBullishDiv,
-      macd1: macdResult.macd,
-      macd2: macd515.macd,
-      macdBearishDiv,  // 新增
-      macdBullishDiv,  // 新增
-      indicators: {
-        rsi,
-        macd: macdResult.macd,
-        signal: macdResult.signal,
-        deltamacd: macdResult.histogram,
-        moment,
-        cci,
-        obv,
-        stk,
-        diosc,
-        vwmacd,
-        cmf,
-        mfi
-      }
-    };
-  }
 
   // 新增：查找前一个分形点的索引
   private findPreviousFractalIndex(fractalArray: boolean[], currentIndex: number): number {
