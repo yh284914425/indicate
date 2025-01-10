@@ -47,7 +47,7 @@ async function sendTelegramMessage(message: string) {
 async function analyzePeriod(symbol: string, interval: string, limit: number): Promise<Signal[]> {
     try {
         const klines = await cryptoService.getExtendedKlines(symbol, interval, limit)
-        const { topDivergence, bottomDivergence, j } = cryptoService.calculateIndicators(klines)
+        const { topDivergence, bottomDivergence, j } = cryptoService.calculateIndicators_KDJ(klines)
 
         const signals: Signal[] = []
         for (let i = 0; i < klines.length; i++) {

@@ -141,6 +141,8 @@ const intervalOptions = [
 
 const selectedLimit = ref(1000)
 const limitOptions = [
+{ label: '100根', value: 100 },
+
   { label: '1000根', value: 1000 },
   { label: '2000根', value: 2000 },
   { label: '3000根', value: 3000 },
@@ -215,7 +217,7 @@ const fetchData = async () => {
       selectedLimit.value
     );
     
-    const { topDivergence, bottomDivergence, j } = cryptoService.calculateIndicators(klines);
+    const { topDivergence, bottomDivergence, j } = cryptoService.calculateIndicators_KDJ(klines);
 
     const newSignals = [];
     for (let i = 0; i < klines.length; i++) {

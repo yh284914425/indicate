@@ -1,0 +1,51 @@
+//@version=4
+//
+study(shorttitle="MACD_X", title="DOBLE MACD X", overlay=false)
+
+
+chopi = 50.0
+
+negro=#000000
+amarillo=#FFFF00
+gris=#C0C0C0
+rojo=#FF0000
+blanco=#FFFFFF
+verde_fuerte=#0AAC00
+
+
+
+// MACD 1
+macd_1 = (ema(close,12)-ema(close,16)) 
+
+// MACD 2
+macd_2 = (ema(close,5)-ema(close,15)) 
+
+
+
+//Divergencias
+max=highest(macd_2, 100)*1.5
+nsc = max
+nsv = max*-1
+
+midpoint = (nsc + nsv) / 2
+ploff = (nsc - midpoint) / 8
+
+f_top_fractal(_src)=>_src[4] < _src[2] and _src[3] < _src[2] and _src[2] > _src[1] and _src[2] > _src[0]
+f_bot_fractal(_src)=>_src[4] > _src[2] and _src[3] > _src[2] and _src[2] < _src[1] and _src[2] < _src[0]
+f_fractalize(_src)=>f_top_fractal(_src) ? 1 : f_bot_fractal(_src) ? -1 : 0
+
+fractal_top1 = f_fractalize(macd_2) > 0 ? macd_2[2] : na
+fractal_bot1 = f_fractalize(macd_2) < 0 ? macd_2[2] : na
+
+high_prev1  = valuewhen(fractal_top1, macd_2[2], 0)[2]
+high_price1 = valuewhen(fractal_top1, high[2], 0)[2]
+low_prev1   = valuewhen(fractal_bot1, macd_2[2], 0)[2]
+low_price1  = valuewhen(fractal_bot1, low[2], 0)[2]
+
+regular_bearish_div1 = fractal_top1  and high[2] > high_price1 and macd_2[2] < high_prev1 
+regular_bullish_div1 = fractal_bot1  and low[2]  < low_price1  and macd_2[2] > low_prev1 
+
+plotshape(regular_bearish_div1    ? macd_2[1] + ploff*0.5 : na, title="Divergencia Regular Bajista", text="🐻 R", location=location.absolute, style=shape.labeldown, size=size.tiny, color=rojo, textcolor=blanco,offset=-2, transp=0)
+plotshape(regular_bullish_div1    ? macd_2[1] - ploff*0.5 : na, title="Divergencia Regular Alcista", text="🐂 R", location=location.absolute, style=shape.labelup, size=size.tiny, color=verde_fuerte, textcolor=blanco,offset=-2, transp=0)
+
+

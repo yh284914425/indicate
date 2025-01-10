@@ -85,7 +85,7 @@
               :data="getSymbolData(symbol)"
               :loading="loadingMap[symbol]"
               :scroll-x="800"
-              :max-height="500"
+              :max-height="300"
               virtual-scroll
             />
             <!-- 移动端列表 -->
@@ -128,7 +128,7 @@
               :data="getSymbolData(selectedSymbol)"
               :loading="loadingMap[selectedSymbol]"
               :scroll-x="800"
-              :max-height="500"
+              :max-height="300"
               virtual-scroll
             />
             <!-- 移动端列表 -->
@@ -305,13 +305,13 @@ const columns: DataTableColumns = [
   {
     title: '周期',
     key: 'period',
-    width: 100,
+    width: 50,  // 从70减至50
     sorter: 'default'
   },
   {
     title: '类型',
     key: 'type',
-    width: 100,
+    width: 50,  // 从70减至50
     render: (row) => {
       const color = row.type === 'top' ? '#d03050' : '#18a058'
       const text = row.type === 'top' ? '顶背离' : '底背离'
@@ -322,7 +322,7 @@ const columns: DataTableColumns = [
   {
     title: '时间',
     key: 'time',
-    width: 200,
+    width: 160,
     sorter: (row1: any, row2: any) => {
       return new Date(row1.time).getTime() - new Date(row2.time).getTime()
     }
@@ -330,7 +330,7 @@ const columns: DataTableColumns = [
   {
     title: '价格',
     key: 'price',
-    width: 150,
+    width: 100,
     render: (row) => {
       return h('span', {}, parseFloat(row.price).toFixed(2))
     },
@@ -745,9 +745,36 @@ ${divergenceType}信号提醒！我是浏览器端
 /* 分析网格 */
 .analysis-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(3, minmax(280px, 1fr));  /* 设置最小宽度为280px */
+  gap: 8px;
   margin-bottom: 16px;
+}
+
+/* 分析卡片样式 */
+.analysis-card {
+  :deep(.n-card-header) {
+    padding: 8px 12px;  /* 减小卡片头部内边距 */
+  }
+  
+  :deep(.n-card-content) {
+    padding: 8px;  /* 减小卡片内容内边距 */
+  }
+}
+
+/* 表格容器 */
+.table-container {
+  :deep(.n-data-table) {
+    max-height: 300px;
+  }
+}
+
+/* 修改表格列宽 */
+:deep(.n-data-table-td) {
+  padding: 6px !important;  /* 减小单元格内边距 */
+}
+
+:deep(.n-data-table-th) {
+  padding: 6px !important;  /* 减小表头内边距 */
 }
 
 /* 时间轴卡片 */
@@ -916,6 +943,17 @@ ${divergenceType}信号提醒！我是浏览器端
   .symbol-label {
     font-size: 9px;
     min-width: 20px;
+  }
+
+  .analysis-grid {
+    grid-template-columns: 1fr;  /* 移动端单列显示 */
+    gap: 8px;
+  }
+  
+  .table-container {
+    :deep(.n-data-table) {
+      max-height: 250px;  /* 移动端更小的表格高度 */
+    }
   }
 }
 
