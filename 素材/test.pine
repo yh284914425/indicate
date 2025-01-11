@@ -1,51 +1,61 @@
-//@version=4
-//
-study(shorttitle="MACD_X", title="DOBLE MACD X", overlay=false)
 
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// Combined by Claude
+//@version=5
+indicator('盛宜华背离综合指标', overlay=false, max_bars_back=4000)
 
-chopi = 50.0
+// MACD计算
+L1 = 12
+L2 = 26
+tp = close
+m0 = ta.ema(tp, L1)
+m1 = ta.ema(tp, L2)
+macd_1 = m0 - m1
 
-negro=#000000
-amarillo=#FFFF00
-gris=#C0C0C0
-rojo=#FF0000
-blanco=#FFFFFF
-verde_fuerte=#0AAC00
+L1A = 5
+L2A = 15
+tpa = close
+m0a = ta.ema(tpa, L1A)
+m1a = ta.ema(tpa, L2A)
+macd_2 = m0a - m1a
 
-
-
-// MACD 1
-macd_1 = (ema(close,12)-ema(close,16)) 
-
-// MACD 2
-macd_2 = (ema(close,5)-ema(close,15)) 
-
-
-
-//Divergencias
-max=highest(macd_2, 100)*1.5
-nsc = max
-nsv = max*-1
-
-midpoint = (nsc + nsv) / 2
-ploff = (nsc - midpoint) / 8
-
-f_top_fractal(_src)=>_src[4] < _src[2] and _src[3] < _src[2] and _src[2] > _src[1] and _src[2] > _src[0]
-f_bot_fractal(_src)=>_src[4] > _src[2] and _src[3] > _src[2] and _src[2] < _src[1] and _src[2] < _src[0]
-f_fractalize(_src)=>f_top_fractal(_src) ? 1 : f_bot_fractal(_src) ? -1 : 0
+// 背离计算函数
+f_top_fractal(_src) =>
+    _src[4] < _src[2] and _src[3] < _src[2] and _src[2] > _src[1] and _src[2] > _src[0]
+f_bot_fractal(_src) =>
+    _src[4] > _src[2] and _src[3] > _src[2] and _src[2] < _src[1] and _src[2] < _src[0]
+f_fractalize(_src) =>
+    f_top_fractal(_src) ? 1 : f_bot_fractal(_src) ? -1 : 0
 
 fractal_top1 = f_fractalize(macd_2) > 0 ? macd_2[2] : na
 fractal_bot1 = f_fractalize(macd_2) < 0 ? macd_2[2] : na
 
-high_prev1  = valuewhen(fractal_top1, macd_2[2], 0)[2]
-high_price1 = valuewhen(fractal_top1, high[2], 0)[2]
-low_prev1   = valuewhen(fractal_bot1, macd_2[2], 0)[2]
-low_price1  = valuewhen(fractal_bot1, low[2], 0)[2]
+high_prev1 = ta.valuewhen(fractal_top1, macd_2[2], 0)[2]
+high_price1 = ta.valuewhen(fractal_top1, high[2], 0)[2]
+low_prev1 = ta.valuewhen(fractal_bot1, macd_2[2], 0)[2]
+low_price1 = ta.valuewhen(fractal_bot1, low[2], 0)[2]
 
-regular_bearish_div1 = fractal_top1  and high[2] > high_price1 and macd_2[2] < high_prev1 
-regular_bullish_div1 = fractal_bot1  and low[2]  < low_price1  and macd_2[2] > low_prev1 
+regular_bearish_div1 = fractal_top1 and high[2] > high_price1 and macd_2[2] < high_prev1 
+regular_bullish_div1 = fractal_bot1 and low[2] < low_price1 and macd_2[2] > low_prev1 
 
-plotshape(regular_bearish_div1    ? macd_2[1] + ploff*0.5 : na, title="Divergencia Regular Bajista", text="🐻 R", location=location.absolute, style=shape.labeldown, size=size.tiny, color=rojo, textcolor=blanco,offset=-2, transp=0)
-plotshape(regular_bullish_div1    ? macd_2[1] - ploff*0.5 : na, title="Divergencia Regular Alcista", text="🐂 R", location=location.absolute, style=shape.labelup, size=size.tiny, color=verde_fuerte, textcolor=blanco,offset=-2, transp=0)
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
+// 绘图部分
+// ═══════════════════════════════════════════════════════════════════════════════════════════════════
 
+// 绘制0线
+// hline(0, color=color.new(#000000, 0), linestyle=hline.style_solid)
+
+// 绘制MACD线
+// plot(macd_1, title='MACD 1226', color=color.new(#C0C0C0, 0), linewidth=2)
+// plot(macd_2, title='MACD 515', color=color.new(#FFFF00, 0), linewidth=2)
+
+
+
+
+// 绘制背离标记
+ploff = math.abs(macd_2) / 8  // 动态调整标记位置
+
+plotshape(regular_bearish_div1  ? macd_2 + ploff : na, title='顶背离', text='🐻', location=location.absolute, style=shape.labeldown, size=size.tiny, color=color.new(color.red, 0), textcolor=color.new(color.white, 0))
+
+plotshape(regular_bullish_div1   ? macd_2 - ploff : na, title='底背离', text='🐂', location=location.absolute, style=shape.labelup, size=size.tiny, color=color.new(color.lime, 0), textcolor=color.new(color.white, 0))
 

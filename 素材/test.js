@@ -1,14 +1,20 @@
 import klines from './input.js';
 
-// EMA 计算
+// EMA 计算 - 严格按照Pine的ta.ema实现
 const calculateEMA = (data, period) => {
-    const k = 2 / (period + 1);
-    let ema = data[0];
-    const result = [ema];
+    const alpha = 2 / (period + 1);
+    const result = new Array(data.length).fill(0);
+    let sum = 0;
     
-    for (let i = 1; i < data.length; i++) {
-        ema = data[i] * k + ema * (1 - k);
-        result.push(ema);
+    // 初始化EMA，使用SMA作为第一个值
+    for (let i = 0; i < period && i < data.length; i++) {
+        sum += data[i];
+        result[i] = sum / (i + 1);
+    }
+    
+    // 计算剩余的EMA值
+    for (let i = period; i < data.length; i++) {
+        result[i] = data[i] * alpha + result[i-1] * (1 - alpha);
     }
     return result;
 };
@@ -17,6 +23,7 @@ const calculateEMA = (data, period) => {
 const calculateMACD = (prices, fastPeriod, slowPeriod) => {
     const fastEMA = calculateEMA(prices, fastPeriod);
     const slowEMA = calculateEMA(prices, slowPeriod);
+    // MACD = fastEMA - slowEMA
     return fastEMA.map((fast, i) => fast - slowEMA[i]);
 };
 
@@ -24,12 +31,13 @@ const calculateMACD = (prices, fastPeriod, slowPeriod) => {
 function valuewhen(condition, values, occurrence = 0) {
     const result = new Array(values.length).fill(null);
     
-    for (let i = 0; i < values.length; i++) {
+    // 从后向前遍历，模拟Pine的行为
+    for (let i = 0; i < values.length - 2; i++) {
         let count = 0;
         let foundIndex = -1;
         
-        // 从当前位置向前查找，不包括当前位置
-        for (let j = i - 1; j >= 0; j--) {
+        // 从当前位置向前查找
+        for (let j = i; j >= 0; j--) {
             if (condition[j]) {
                 if (count === occurrence) {
                     foundIndex = j;
@@ -40,35 +48,32 @@ function valuewhen(condition, values, occurrence = 0) {
         }
         
         if (foundIndex !== -1) {
-            result[i] = values[foundIndex];
+            // 应用[2]的偏移
+            result[i + 2] = values[foundIndex];
         }
     }
     
     return result;
 }
 
-// 分形检测
+// 分形检测 - 严格按照Pine的实现
 const detectFractal = (values, index) => {
     if (index < 2 || index >= values.length - 2) return 0;
     
-    // 在Pine中[0]是最新值，[4]是最旧的值
-    const v4 = values[index - 2];  // [4] 最旧值
-    const v3 = values[index - 1];  // [3]
-    const v2 = values[index];      // [2] 当前检测点
-    const v1 = values[index + 1];  // [1]
+    // Pine中的数组索引是反向的：[0]是最新的，[4]是最旧的
     const v0 = values[index + 2];  // [0] 最新值
+    const v1 = values[index + 1];  // [1]
+    const v2 = values[index];      // [2] 中心点
+    const v3 = values[index - 1];  // [3]
+    const v4 = values[index - 2];  // [4] 最旧值
     
-    // 顶分形: v4 < v2 and v3 < v2 and v2 > v1 and v2 > v0
-    // 增加额外的条件来确保分形更显著
-    if (v4 < v2 && v3 < v2 && v2 > v1 && v2 > v0 && 
-        Math.abs(v2 - Math.min(v4, v3, v1, v0)) > Math.abs(v2) * 0.001) {
+    // 顶分形: _src[4] < _src[2] and _src[3] < _src[2] and _src[2] > _src[1] and _src[2] > _src[0]
+    if (v4 < v2 && v3 < v2 && v2 > v1 && v2 > v0) {
         return 1;
     }
     
-    // 底分形: v4 > v2 and v3 > v2 and v2 < v1 and v2 < v0
-    // 增加额外的条件来确保分形更显著
-    if (v4 > v2 && v3 > v2 && v2 < v1 && v2 < v0 && 
-        Math.abs(v2 - Math.max(v4, v3, v1, v0)) > Math.abs(v2) * 0.001) {
+    // 底分形: _src[4] > _src[2] and _src[3] > _src[2] and _src[2] < _src[1] and _src[2] < _src[0]
+    if (v4 > v2 && v3 > v2 && v2 < v1 && v2 < v0) {
         return -1;
     }
     
@@ -207,167 +212,62 @@ const detectSignals = (klines) => {
     const highs = klines.map(k => parseFloat(k.high));
     const lows = klines.map(k => parseFloat(k.low));
     
-    // 计算两个MACD
-    const macd1 = calculateMACD(closes, 12, 26); // MACD(12,26)
-    const macd2 = calculateMACD(closes, 5, 15);  // MACD(5,15)
+    // 计算MACD
+    const macd1 = calculateMACD(closes, 12, 26);
+    const macd2 = calculateMACD(closes, 5, 15);
     
-    // 计算MACD2的最大值范围
-    const getHighest = (arr, period) => {
-        const result = new Array(arr.length).fill(0);
-        for (let i = 0; i < arr.length; i++) {
-            let max = arr[i];
-            for (let j = Math.max(0, i - period + 1); j <= i; j++) {
-                max = Math.max(max, arr[j]);
-            }
-            result[i] = max;
-        }
-        return result;
-    };
+    // 计算ploff
+    const ploff = macd2.map(v => Math.abs(v) / 8);
     
-    const macd2Highest = getHighest(macd2, 100).map(v => v * 1.5);
-    const nsc = macd2Highest;
-    const nsv = macd2Highest.map(v => v * -1);
+    // 创建结果数组
+    const fractal_top1 = new Array(macd2.length).fill(null);
+    const fractal_bot1 = new Array(macd2.length).fill(null);
     
-    // 计算中点和偏移量
-    const midpoint = nsc.map((v, i) => (v + nsv[i]) / 2);
-    const ploff = nsc.map((v, i) => (v - midpoint[i]) / 8);
-    
-    // 计算Atlas Mini指标
-    const length = 20;
-    const mult = 2.0;
-    const basis = calculateSMA(closes, length);
-    const dev = calculateStdev(closes, length).map(d => d * mult);
-    const upper = basis.map((b, i) => b + dev[i]);
-    const lower = basis.map((b, i) => b - dev[i]);
-    const dbb = upper.map((u, i) => Math.sqrt((u - lower[i]) / u) * 20);
-    const dbbmed = calculateEMA(dbb, 120);
-    const factor = dbbmed.map(v => v * 4/5);
-    const atl = dbb.map((v, i) => v - factor[i]);
-    
-    // 计算Choppiness Index
-    const length1 = 14;
-    const tr = calculateTR(highs, lows, closes);
-    const sumTR = calculateSum(tr, length1);
-    const lowestLow = calculateLowest(lows.map((l, i) => Math.min(l, closes[i-1] || l)), length1);
-    const highestHigh = calculateHighest(highs.map((h, i) => Math.max(h, closes[i-1] || h)), length1);
-    const height = highestHigh.map((h, i) => h - lowestLow[i]);
-    const chop = height.map((h, i) => 100 * (Math.log10(sumTR[i] / h) / Math.log10(length1)));
-    
-    // 调试四个关键时间点
-    console.log('\n===== 分析四个关键时间点 =====');
-    const timePoints = [
-        '2025-01-05T14:00:00',
-        '2025-01-03T03:00:00',
-        '2024-12-31T00:00:00',
-        '2024-12-29T17:00:00'
-    ];
-    
-    const targetIndices = timePoints.map(time => {
-        console.log(`\n分析时间点: ${time}`);
-        return debugTimePoint(klines, macd2, new Date(time));
-    });
-    
-    // 创建分形条件数组
-    const fractalTop = new Array(macd2.length).fill(false);
-    const fractalBottom = new Array(macd2.length).fill(false);
-    
-    // 检测所有分形
+    // 检测分形并填充数组
     for (let i = 2; i < macd2.length - 2; i++) {
         const fractal = detectFractal(macd2, i);
-        if (fractal === 1 && config.div_reg_ba) fractalTop[i] = true;
-        if (fractal === -1 && config.div_reg_al) fractalBottom[i] = true;
-        
-        // 调试关键时间点附近的分形
-        if (targetIndices.includes(i)) {
-            console.log(`\n分形标记状态 - ${formatDate(klines[i].openTime)}:`);
-            console.log('当前位置是否为顶分形:', fractal === 1);
-            console.log('当前位置是否为底分形:', fractal === -1);
-            console.log('MACD值:', macd2[i]);
-            console.log('Low值:', lows[i]);
-            console.log('High值:', highs[i]);
-            // 打印额外的范围信息
-            console.log('NSC值:', nsc[i]);
-            console.log('NSV值:', nsv[i]);
-            console.log('中点值:', midpoint[i]);
-            console.log('偏移量:', ploff[i]);
-            // 打印Atlas和Choppiness信息
-            if (config.afa) {
-                console.log('Atlas值:', atl[i]);
-                console.log('Atlas区域:', atl[i] <= 0);
-            }
-            if (config.afc) {
-                console.log('Choppiness值:', chop[i]);
-                console.log('Choppiness区域:', chop[i] >= config.chopi);
-            }
+        if (fractal > 0) {
+            fractal_top1[i] = macd2[i];
+        } else if (fractal < 0) {
+            fractal_bot1[i] = macd2[i];
         }
+    }
+    
+    // 计算valuewhen值
+    const high_prev1 = valuewhen(fractal_top1.map(v => v !== null), macd2, 0);
+    const high_price1 = valuewhen(fractal_top1.map(v => v !== null), highs, 0);
+    const low_prev1 = valuewhen(fractal_bot1.map(v => v !== null), macd2, 0);
+    const low_price1 = valuewhen(fractal_bot1.map(v => v !== null), lows, 0);
+    
+    // 输出最近几个小时的值
+    for (let i = klines.length - 7; i < klines.length; i++) {
+        console.log(`${formatDate(klines[i].openTime)} [${fractal_top1[i]?.toFixed(2) ?? 'na'} ${fractal_bot1[i]?.toFixed(2) ?? 'na'} ${high_prev1[i]?.toFixed(2) ?? 'na'} ${high_price1[i]?.toFixed(2) ?? 'na'} ${low_prev1[i]?.toFixed(2) ?? 'na'} ${low_price1[i]?.toFixed(2) ?? 'na'}]`);
     }
     
     const signals = [];
     
     // 检测背离
     for (let i = 2; i < macd2.length - 2; i++) {
-        // 获取前一个分形的值
-        const prevTopMacd = valuewhen(fractalTop, macd2, 0)[i];
-        const prevTopPrice = valuewhen(fractalTop, highs, 0)[i];
-        const prevBottomMacd = valuewhen(fractalBottom, macd2, 0)[i];
-        const prevBottomPrice = valuewhen(fractalBottom, lows, 0)[i];
-        
-        // 调试关键时间点的背离检测
-        if (targetIndices.includes(i)) {
-            console.log(`\n背离检测状态 - ${formatDate(klines[i].openTime)}:`);
-            console.log('前一个顶分形MACD:', prevTopMacd);
-            console.log('前一个顶分形价格:', prevTopPrice);
-            console.log('前一个底分形MACD:', prevBottomMacd);
-            console.log('前一个底分形价格:', prevBottomPrice);
-            console.log('当前是否为顶分形:', fractalTop[i]);
-            console.log('当前是否为底分形:', fractalBottom[i]);
-            if (fractalTop[i]) {
-                console.log('看跌背离条件检查:');
-                console.log('价格是否更高:', highs[i] > prevTopPrice);
-                console.log('MACD是否更低:', macd2[i] < prevTopMacd);
-                console.log('偏移后的位置:', macd2[i] + ploff[i] * 0.5);
-            }
-            if (fractalBottom[i]) {
-                console.log('看涨背离条件检查:');
-                console.log('价格是否更低:', lows[i] < prevBottomPrice);
-                console.log('MACD是否更高:', macd2[i] > prevBottomMacd);
-                console.log('偏移后的位置:', macd2[i] - ploff[i] * 0.5);
-                console.log('当前MACD:', macd2[i]);
-                console.log('前一个底分形MACD:', prevBottomMacd);
-                console.log('MACD差值:', macd2[i] - prevBottomMacd);
-                // 检查MACD趋势
-                if (i >= 1) {
-                    console.log('MACD趋势:', macd2[i] > macd2[i-1] ? '上升' : '下降');
-                    console.log('MACD[2]:', macd2[i]);
-                    console.log('low_prev1:', prevBottomMacd);
-                }
-            }
-        }
-        
-        // 看跌背离 - 严格按照Pine的plotshape
-        if (fractalTop[i] && prevTopMacd !== null && config.div_reg_ba && config.etiquetas) {
-            const regular_bearish_div1 = fractalTop[i] && highs[i] > prevTopPrice && macd2[i] < prevTopMacd;
-            if (regular_bearish_div1 && i > 0) {  // 确保有[1]的值
+        // 看跌背离
+        if (fractal_top1[i] !== null && high_prev1[i] !== null) {
+            const regular_bearish_div1 = highs[i] > high_price1[i] && macd2[i] < high_prev1[i];
+            if (regular_bearish_div1) {
+                const plotPosition = macd2[i] + ploff[i];
                 signals.push({
-                    time: klines[i-2].openTime,  // offset=-2
-                    type: '🐻 R',
-                    macdValue: macd2[i],
-                    price: highs[i],
-                    plotPosition: macd2[i-1] + ploff[i] * 0.5  // 使用macd_2[1]
+                    time: klines[i].openTime,
+                    type: '🐻 R'
                 });
             }
         }
         
-        // 看涨背离 - 严格按照Pine的plotshape
-        if (fractalBottom[i] && prevBottomMacd !== null && config.div_reg_al && config.etiquetas) {
-            const regular_bullish_div1 = fractalBottom[i] && lows[i] < prevBottomPrice && macd2[i] > prevBottomMacd;
-            if (regular_bullish_div1 && i > 0) {  // 确保有[1]的值
+        // 看涨背离
+        if (fractal_bot1[i] !== null && low_prev1[i] !== null) {
+            const regular_bullish_div1 = lows[i] < low_price1[i] && macd2[i] > low_prev1[i];
+            if (regular_bullish_div1) {
+                const plotPosition = macd2[i] - ploff[i];
                 signals.push({
-                    time: klines[i-2].openTime,  // offset=-2
-                    type: '🐂 R',
-                    macdValue: macd2[i],
-                    price: lows[i],
-                    plotPosition: macd2[i-1] - ploff[i] * 0.5  // 使用macd_2[1]
+                    time: klines[i].openTime,
+                    type: '🐂 R'
                 });
             }
         }
@@ -375,20 +275,21 @@ const detectSignals = (klines) => {
     
     // 按时间降序排序
     signals.sort((a, b) => b.time - a.time);
-    return signals.map(signal => {
-        console.log('信号详情:', {
-            time: formatDate(signal.time),
-            type: signal.type,
-            macdValue: signal.macdValue,
-            price: signal.price
-        });
-        return `${formatDate(signal.time)} ${signal.type}`;
-    }).join('\n');
+    return signals.map(signal => `${formatDate(signal.time)} ${signal.type}`).join('\n');
 };
 
 // 处理数据并输出信号
-console.log('开始处理K线数据...');
-console.log('K线数量:', klines.length);
 const result = detectSignals(klines);
 console.log('\n最终信号结果:');
 console.log(result);
+
+
+
+// [2025-01-11T03:00:00.000+08:00]: fractal_top1:NaN fractal_bot1:NaN high_prev1:708.916 high_price1:95,293.4 low_prev1:-670.485 low_price1:91,203.67 regular_bearish_div1:false regular_bullish_div1:false
+// [2025-01-11T04:00:00.000+08:00]: fractal_top1:NaN fractal_bot1:NaN high_prev1:708.916 high_price1:95,293.4 low_prev1:-66.559 low_price1:93,177.4 regular_bearish_div1:false regular_bullish_div1:false
+// [2025-01-11T05:00:00.000+08:00]: fractal_top1:434.083 fractal_bot1:NaN high_prev1:708.916 high_price1:95,293.4 low_prev1:-66.559 low_price1:93,177.4 regular_bearish_div1:true regular_bullish_div1:false
+// [2025-01-11T06:00:00.000+08:00]: fractal_top1:NaN fractal_bot1:NaN high_prev1:708.916 high_price1:95,293.4 low_prev1:-66.559 low_price1:93,177.4 regular_bearish_div1:false regular_bullish_div1:false
+// [2025-01-11T07:00:00.000+08:00]: fractal_top1:NaN fractal_bot1:NaN high_prev1:434.083 high_price1:95,386.74 low_prev1:-66.559 low_price1:93,177.4 regular_bearish_div1:false regular_bullish_div1:false
+// [2025-01-11T08:00:00.000+08:00]: fractal_top1:NaN fractal_bot1:NaN high_prev1:434.083 high_price1:95,386.74 low_prev1:-66.559 low_price1:93,177.4 regular_bearish_div1:false regular_bullish_div1:false
+// [2025-01-11T09:00:00.000+08:00]: fractal_top1:NaN fractal_bot1:NaN high_prev1:434.083 high_price1:95,386.74 low_prev1:-66.559 low_price1:93,177.4 regular_bearish_div1:false regular_bullish_div1:false
+// [2025-01-11T10:00:00.000+08:00]: fractal_top1:NaN fractal_bot1:NaN high_prev1:434.083 high_price1:95,386.74 low_prev1:-66.559 low_price1:93,177.4 regular_bearish_div1:false regular_bullish_div1:false
